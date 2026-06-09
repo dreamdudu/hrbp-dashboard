@@ -1428,7 +1428,7 @@ function syncFromDingtalk(){
     return events;
   }
   if(btn){btn.disabled=true;btn.innerHTML="同步中...";}
-  fetch("http://127.0.0.1:18632/sync-calendar").then(function(r){
+  fetch("/sync-calendar").then(function(r){
     if(!r.ok)throw new Error("HTTP "+r.status);
     return r.text();
   }).then(function(text){
@@ -1445,7 +1445,7 @@ function syncFromDingtalk(){
       a.click();
     }catch(ee){}
     setTimeout(function(){
-      fetch("http://127.0.0.1:18632/sync-calendar").then(function(r2){
+      fetch("/sync-calendar").then(function(r2){
         if(!r2.ok)throw new Error("HTTP "+r2.status);
         return r2.text();
       }).then(function(text2){
