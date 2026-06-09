@@ -1,1 +1,8 @@
-﻿sync_result.js
+sync_result.js
+.port.txt
+dws_server.log
+sync_response.json
+test_output.html
+test_response.html
+data/*.json
+data/backups/

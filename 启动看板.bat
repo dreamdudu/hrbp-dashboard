@@ -1,23 +1,32 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
-title HRBP 看板
+title HRBP Dashboard
 cd /d "%~dp0"
 
-echo 正在启动看板服务...
-start /min powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File "dws_server.ps1"
+if exist ".port.txt" del ".port.txt" >nul 2>nul
 
-rem 等待服务启动，最多等 8 秒
+echo Starting dashboard service...
+start "" /min "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0dws_server.ps1"
+
+rem Wait up to 12 seconds for the service to write its port file.
 set WAIT=0
 :CHECK
-timeout /t 2 /nobreak >nul
-set /a WAIT+=2
-if exist ".port.txt" goto STARTED
-if %WAIT% lss 8 goto CHECK
+ping -n 2 127.0.0.1 >nul
+set /a WAIT+=1
+if not exist ".port.txt" goto RETRY
+set /p PORT=<.port.txt
+if "%PORT%"=="" goto RETRY
+goto STARTED
+
+:RETRY
+if %WAIT% lss 12 goto CHECK
+echo Service failed to start. Opening index.html directly.
+if /i "%~1"=="--no-open" exit /b 1
+start "" "%~dp0index.html"
+exit /b 1
 
 :STARTED
-set /p PORT=<.port.txt
-if "%PORT%"=="" set PORT=18632
-
-echo 正在打开看板 http://127.0.0.1:%PORT%/
+echo Opening dashboard http://127.0.0.1:%PORT%/
+if /i "%~1"=="--no-open" exit /b 0
 start "" "http://127.0.0.1:%PORT%/"
-exit
+exit /b 0
