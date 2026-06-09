@@ -980,7 +980,11 @@
 <input type="text" id="cal-title" placeholder="日程标题">
 <div class="cf-row">
 <input type="date" id="cal-date">
-<input type="time" id="cal-start" value="09:00"><span style="color:var(--slate-400);font-size:12px">至</span><input type="time" id="cal-end" value="10:00">
+</div>
+<div class="cf-row">
+<input type="time" id="cal-start" value="09:00">
+<span style="color:var(--slate-400);font-size:12px;line-height:32px">至</span>
+<input type="time" id="cal-end" value="10:00">
 </div>
 <textarea id="cal-notes" placeholder="备注（可选）"></textarea>
 <button class="btn-go" onclick="saveCalendar()" style="width:100%;font-size:12px;padding:8px">添加日程</button>
