@@ -2,9 +2,21 @@
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
-$s = [System.Net.HttpListener]::new()
-$s.Prefixes.Add("http://127.0.0.1:18632/")
-$s.Start()
+$port = 18632
+while ($true) {
+    try {
+        $s = [System.Net.HttpListener]::new()
+        $s.Prefixes.Add("http://127.0.0.1:$port/")
+        $s.Start()
+        break
+    } catch {
+        $port++
+        if ($port -gt 18640) { exit 1 }
+    }
+}
+# 立即写入端口号，让 bat 能读到
+$port | Out-File "$scriptDir\.port.txt" -Encoding utf8
+
 $year = (Get-Date).Year
 $endDate = "$year-12-31T23:59:59+08:00"
 while ($s.IsListening) {
