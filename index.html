@@ -1371,11 +1371,11 @@ saveCalItems(items);alert("已保存");cClose();updateCalStats();renderCalList()
 function cDel(){var id=cid;if(!id)return;if(!confirm("确定删除?"))return;delCal(id);cClose();}
 async function delCal(id){if(!confirm("\u786e\u5b9a\u5220\u9664?"))return;var items=getCalItems().filter(function(c){return c.id!==id;});saveCalItems(items);T("\u65e5\u7a0b\u5df2\u5220\u9664","i");updateCalStats();renderCalList();if(calViewMode==="month")renderCalMonthView();}
 function syncFromDingtalk(){
+  var btn=document.querySelector("button[onclick*='syncFromDingtalk']");
   function doImport(data){
     if(!data||data.length===0){T("未获取到钉钉日程","i");return;}
     var local=getCalItems();
     var existing=new Set(local.map(function(x){return x.date+"|"+x.title+"|"+(x.start||"")+"|"+(x.end||"");}));
-    // 先删除已取消的旧日程（标记为 dingtalk 来源且不在新数据中的）
     var newKeys=new Set();
     data.forEach(function(evt){newKeys.add(evt.date+"|"+evt.title+"|"+(evt.start||"")+"|"+(evt.end||""));});
     var remaining=local.filter(function(x){
@@ -1400,20 +1400,64 @@ function syncFromDingtalk(){
     else T("日程已是最新","i");
     updateCalStats();renderCalList();renderCalGrid();renderCalTimeline();if(calViewMode==="month")renderCalMonthView();
   }
-  // 检查是否有同步数据文件（由 dws 生成）
-  window.__dingtalkSyncResult=null;
-  var s=document.createElement("script");
-  s.src="sync_result.js?_t="+Date.now();
-  s.onload=function(){
-    var data=window.__dingtalkSyncResult;
-    if(data&&Array.isArray(data)){doImport(data);}
-    else{T("同步数据格式错误","w");}
-  };
-  s.onerror=function(){
-    // 没有数据文件时引导用户
-    T("请先运行 dws 获取钉钉日程数据","w");
-  };
-  document.head.appendChild(s);
+  function parseEvents(raw){
+    var events=[];
+    try{
+      var data=typeof raw==="string"?JSON.parse(raw):raw;
+      var list=data.result&&data.result.events?data.result.events:[];
+      list.forEach(function(e){
+        if(e.status==="cancelled")return;
+        var title=e.title||e.summary||"";
+        if(!title)return;
+        var sd=(e.start&&(e.start.dateTime||e.start.date))||"";
+        var ed=(e.end&&(e.end.dateTime||e.end.date))||"";
+        var d="",st="",et="";
+        if(sd.indexOf("T")>=0){
+          var dt=new Date(sd);
+          if(!isNaN(dt)){d=dt.toISOString().slice(0,10);st=dt.toTimeString().slice(0,5);}
+          else if(sd.length>=10)d=sd.slice(0,10);
+        }else if(sd.length>=10){d=sd.slice(0,10);}
+        if(ed.indexOf("T")>=0){
+          var etd=new Date(ed);
+          if(!isNaN(etd))et=etd.toTimeString().slice(0,5);
+        }
+        var notes=e.description?e.description.split("\n")[0]:"";
+        events.push({title:title,date:d,start:st,end:et,notes:notes});
+      });
+    }catch(ex){}
+    return events;
+  }
+  if(btn){btn.disabled=true;btn.innerHTML="同步中...";}
+  fetch("http://127.0.0.1:18632/sync-calendar").then(function(r){
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    return r.text();
+  }).then(function(text){
+    var data=parseEvents(text);
+    doImport(data);
+    if(btn){btn.disabled=false;btn.innerHTML="<svg viewBox="0 0 1024 1024" width="16" height="16" style="flex-shrink:0;vertical-align:middle"><path fill="#0089FF" d="M512 0C229.248 0 0 229.248 0 512s229.248 512 512 512 512-229.248 512-512S794.752 0 512 0zm245.76 682.667H512c-14.208 0-25.6-11.392-25.6-25.6V366.933c0-14.208 11.392-25.6 25.6-25.6h110.933c14.208 0 25.6 11.392 25.6 25.6v238.934h108.8c14.208 0 25.6 11.392 25.6 25.6v25.6c0 14.208-11.392 25.6-25.6 25.6zM314.453 682.667H266.24c-14.208 0-25.6-11.392-25.6-25.6v-25.6c0-14.208 11.392-25.6 25.6-25.6h48.213v-238.934c0-14.208 11.392-25.6 25.6-25.6h110.934c14.208 0 25.6 11.392 25.6 25.6v264.534c0 14.208-11.392 25.6-25.6 25.6H314.453z"/></svg> 同步钉钉日程";}
+  }).catch(function(e){
+    // 服务没启动，尝试后台启动
+    T("正在启动同步服务...","i");
+    try{
+      var a=document.createElement("a");
+      a.href="dws_server.vbs";
+      a.target="_blank";
+      a.click();
+    }catch(ee){}
+    setTimeout(function(){
+      fetch("http://127.0.0.1:18632/sync-calendar").then(function(r2){
+        if(!r2.ok)throw new Error("HTTP "+r2.status);
+        return r2.text();
+      }).then(function(text2){
+        var data=parseEvents(text2);
+        doImport(data);
+        if(btn){btn.disabled=false;btn.innerHTML="<svg viewBox="0 0 1024 1024" width="16" height="16" style="flex-shrink:0;vertical-align:middle"><path fill="#0089FF" d="M512 0C229.248 0 0 229.248 0 512s229.248 512 512 512 512-229.248 512-512S794.752 0 512 0zm245.76 682.667H512c-14.208 0-25.6-11.392-25.6-25.6V366.933c0-14.208 11.392-25.6 25.6-25.6h110.933c14.208 0 25.6 11.392 25.6 25.6v238.934h108.8c14.208 0 25.6 11.392 25.6 25.6v25.6c0 14.208-11.392 25.6-25.6 25.6zM314.453 682.667H266.24c-14.208 0-25.6-11.392-25.6-25.6v-25.6c0-14.208 11.392-25.6 25.6-25.6h48.213v-238.934c0-14.208 11.392-25.6 25.6-25.6h110.934c14.208 0 25.6 11.392 25.6 25.6v264.534c0 14.208-11.392 25.6-25.6 25.6H314.453z"/></svg> 同步钉钉日程";}
+      }).catch(function(e2){
+        T("同步服务启动失败，请双击「启动看板.bat」打开看板","w");
+        if(btn){btn.disabled=false;btn.innerHTML="<svg viewBox="0 0 1024 1024" width="16" height="16" style="flex-shrink:0;vertical-align:middle"><path fill="#0089FF" d="M512 0C229.248 0 0 229.248 0 512s229.248 512 512 512 512-229.248 512-512S794.752 0 512 0zm245.76 682.667H512c-14.208 0-25.6-11.392-25.6-25.6V366.933c0-14.208 11.392-25.6 25.6-25.6h110.933c14.208 0 25.6 11.392 25.6 25.6v238.934h108.8c14.208 0 25.6 11.392 25.6 25.6v25.6c0 14.208-11.392 25.6-25.6 25.6zM314.453 682.667H266.24c-14.208 0-25.6-11.392-25.6-25.6v-25.6c0-14.208 11.392-25.6 25.6-25.6h48.213v-238.934c0-14.208 11.392-25.6 25.6-25.6h110.934c14.208 0 25.6 11.392 25.6 25.6v264.534c0 14.208-11.392 25.6-25.6 25.6H314.453z"/></svg> 同步钉钉日程";}
+      });
+    }, 2000);
+  });
 }
 function updateCalStats(){var items=getCalItems();document.getElementById("d-cal-today").textContent=items.filter(function(c){return c.date===TD();}).length;document.getElementById("d-cal-week").textContent=items.filter(function(c){return IW(c.date);}).length;document.getElementById("d-cal-month").textContent=items.filter(function(c){return IM(c.date);}).length;}
 function renderCalList(){var el=document.getElementById("cal-list");var mini=document.getElementById("cal-list-mini");var items=getCalItems().sort(function(a,b){return(a.date+(a.start||"99:99")).localeCompare(b.date+(b.start||"99:99"));});calItems=items;if(el){var today=TD(),up=items.filter(function(c){return c.date>=today;}).slice(0,30);if(up.length===0){el.innerHTML="<div style='text-align:center;color:var(--slate-400);padding:30px 0'>\u6682\u65e0\u65e5\u7a0b</div>";}else{el.innerHTML=up.map(function(c){var isT=c.date===today;return "<div style='display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;margin-bottom:8px;background:"+(isT?"var(--blue-50)":"var(--slate-50)")+"'><div style='min-width:48px;text-align:center'><div style='font-size:20px;font-weight:700;color:"+(isT?"var(--blue-500)":"var(--slate-700)")+"'>"+parseInt(c.date.slice(8))+"</div><div style='font-size:11px;color:var(--slate-400)'>"+parseInt(c.date.slice(5,7))+"\u6708</div></div><div style='flex:1'><div style='font-weight:600;font-size:14px'>"+ESC(c.title)+(c.start?" <span style='color:var(--blue-500);font-weight:400;font-size:13px'>"+c.start+(c.end?"-"+c.end:"")+"</span>":"")+"</div>"+(c.notes?"<div style='font-size:12px;color:var(--slate-400);margin-top:2px'>"+ESC(c.notes)+"</div>":"")+"</div><button onclick=\"showCalDetail('"+c.id+"')\" style='background:none;border:none;cursor:pointer;color:var(--rose-400);font-size:14px' title='\u5220\u9664'>\u2715</button></div>";}).join("");}}
