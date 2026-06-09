@@ -1,12 +1,10 @@
 ﻿# 同步钉钉日程脚本
 # 依赖：dws 命令行工具（https://github.com/open-dingtalk/dws）
-# 使用方法：双击运行即可
 
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $resultFile = Join-Path $scriptDir "sync_result.js"
 
-# 检查 dws 是否可用
 $dwsCmd = Get-Command "dws" -ErrorAction SilentlyContinue
 if (-not $dwsCmd) {
     Write-Host "❌ 未找到 dws 命令，请先安装：https://github.com/open-dingtalk/dws" -ForegroundColor Red
@@ -16,7 +14,6 @@ if (-not $dwsCmd) {
 
 Write-Host "📅 正在从钉钉同步日程..." -ForegroundColor Cyan
 
-# 计算时间范围：今天到今年年底
 $today = Get-Date
 $endOfYear = Get-Date -Year $today.Year -Month 12 -Day 31
 
@@ -39,8 +36,21 @@ try {
         $rawList = $parsed.events
     }
     
+    $skippedCancelled = 0
+    $skippedNoTitle = 0
+    
     foreach ($evt in $rawList) {
-        $title = if ($evt.title) { $evt.title } elseif ($evt.summary) { $evt.summary } else { "(无标题)" }
+        if ($evt.status -eq "cancelled") {
+            $skippedCancelled++
+            continue
+        }
+        
+        $title = if ($evt.title) { $evt.title } elseif ($evt.summary) { $evt.summary } else { "" }
+        
+        if (-not $title) {
+            $skippedNoTitle++
+            continue
+        }
         
         $startRaw = $evt.start
         $endRaw = $evt.end
@@ -82,15 +92,17 @@ try {
         }
     }
     
-    $jsonStr = $events | ConvertTo-Json -Depth 3 -Compress
-    $jsContent = "window.__dingtalkSyncResult = $jsonStr;"
+    # 确保输出为数组（PowerShell 单条记录会输出对象而非数组）
+    $jsContent = "window.__dingtalkSyncResult = " + (ConvertTo-Json -InputObject $events -Depth 3 -Compress) + ";"
     $jsContent | Out-File -FilePath $resultFile -Encoding utf8
     
     Write-Host "✅ 同步完成！共获取 $($events.Count) 条日程" -ForegroundColor Green
+    if ($skippedCancelled -gt 0) { Write-Host "   已跳过 $skippedCancelled 条已取消日程" -ForegroundColor Gray }
+    if ($skippedNoTitle -gt 0) { Write-Host "   已跳过 $skippedNoTitle 条无标题日程" -ForegroundColor Gray }
     Write-Host "   请在浏览器中刷新页面，然后点击"同步钉钉日程"按钮" -ForegroundColor Gray
 } catch {
     Write-Host "❌ 同步失败：$_" -ForegroundColor Red
-    $jsContent = "window.__dingtalkSyncResult = {error: '$_'};"
+    $jsContent = "window.__dingtalkSyncResult = [];"
     $jsContent | Out-File -FilePath $resultFile -Encoding utf8
 }
 
