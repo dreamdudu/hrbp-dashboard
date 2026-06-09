@@ -1,4 +1,7 @@
 ﻿$env:PATH = [Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [Environment]::GetEnvironmentVariable("PATH", "Machine")
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $scriptDir
+
 $s = [System.Net.HttpListener]::new()
 $s.Prefixes.Add("http://127.0.0.1:18632/")
 $s.Start()
@@ -17,14 +20,18 @@ while ($s.IsListening) {
             $c.Response.ContentLength64 = $b.Length
             $c.Response.OutputStream.Write($b, 0, $b.Length)
         } catch {
-            $c.Response.StatusCode = 500
+            $err = "{""error"":""$($_.Exception.Message -replace '"','\"')""}"
+            $b = [Text.Encoding]::UTF8.GetBytes($err)
+            $c.Response.ContentType = "application/json; charset=utf-8"
+            $c.Response.Headers.Add("Access-Control-Allow-Origin", "*")
+            $c.Response.ContentLength64 = $b.Length
+            $c.Response.OutputStream.Write($b, 0, $b.Length)
         }
         $c.Response.Close()
     } else {
-        # 静态文件服务
-        $path = $c.Request.Url.LocalPath
+        $path = $c.Request.Url.AbsolutePath
         if ($path -eq "/") { $path = "/index.html" }
-        $filePath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PWD.Path, $path.TrimStart("/")))
+        $filePath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($scriptDir, $path.TrimStart("/")))
         if ([System.IO.File]::Exists($filePath)) {
             $content = [System.IO.File]::ReadAllBytes($filePath)
             $ext = [System.IO.Path]::GetExtension($filePath)
