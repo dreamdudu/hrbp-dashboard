@@ -988,6 +988,7 @@
 </div>
 <textarea id="cal-notes" placeholder="备注（可选）"></textarea>
 <button class="btn-go" onclick="saveCalendar()" style="width:100%;font-size:12px;padding:8px">添加日程</button>
+<button onclick="syncFromDingtalk()" style="width:100%;font-size:12px;padding:8px;margin-top:8px;background:#fff;border:1px solid #4f46e5;color:#4f46e5;border-radius:6px;cursor:pointer">📅 同步钉钉日程</button>
 </div>
 </div>
 <div class="cal-right">
@@ -1369,6 +1370,35 @@ saveCalItems(items);alert("已保存");cClose();updateCalStats();renderCalList()
 }
 function cDel(){var id=cid;if(!id)return;if(!confirm("确定删除?"))return;delCal(id);cClose();}
 async function delCal(id){if(!confirm("\u786e\u5b9a\u5220\u9664?"))return;var items=getCalItems().filter(function(c){return c.id!==id;});saveCalItems(items);T("\u65e5\u7a0b\u5df2\u5220\u9664","i");updateCalStats();renderCalList();if(calViewMode==="month")renderCalMonthView();}
+function syncFromDingtalk(){
+  var btn=document.querySelector("button[onclick*='syncFromDingtalk']");
+  function doImport(data){
+    if(!data||data.error){T("同步失败或无数据","w");if(btn)btn.disabled=false;return;}
+    var items=data.events||data;
+    if(!items||!items.length){T("未获取到钉钉日程","i");if(btn)btn.disabled=false;return;}
+    var local=getCalItems();
+    var existing=new Set(local.map(function(x){return x.date+"|"+x.title+"|"+(x.start||"")+"|"+(x.end||"");}));
+    var added=0;
+    items.forEach(function(evt){
+      var key=evt.date+"|"+evt.title+"|"+(evt.start||"")+"|"+(evt.end||"");
+      if(!existing.has(key)){
+        local.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),title:evt.title,date:evt.date,start:evt.start||"",end:evt.end||"",notes:evt.notes||"",source:"dingtalk",createdAt:new Date().toISOString()});
+        added++;
+      }
+    });
+    if(added){saveCalItems(local);T("已同步 "+added+" 条钉钉日程","s");updateCalStats();renderCalList();renderCalGrid();renderCalTimeline();if(calViewMode==="month")renderCalMonthView();}
+    else{T("没有新的钉钉日程需要同步","i");}
+    if(btn)btn.disabled=false;
+  }
+  if(btn){btn.disabled=true;btn.textContent="同步中...";}
+  // 通过动态 script 加载 sync_result.js（兼容 file:// 协议）
+  window.__dingtalkSyncResult=null;
+  var s=document.createElement("script");
+  s.src="sync_result.js?_t="+Date.now();
+  s.onload=function(){if(window.__dingtalkSyncResult){doImport(window.__dingtalkSyncResult);}else{T("同步数据为空","w");if(btn)btn.disabled=false;}};
+  s.onerror=function(){T("请先双击 sync_dingtalk.ps1 运行同步脚本","w");if(btn)btn.disabled=false;};
+  document.head.appendChild(s);
+}
 function updateCalStats(){var items=getCalItems();document.getElementById("d-cal-today").textContent=items.filter(function(c){return c.date===TD();}).length;document.getElementById("d-cal-week").textContent=items.filter(function(c){return IW(c.date);}).length;document.getElementById("d-cal-month").textContent=items.filter(function(c){return IM(c.date);}).length;}
 function renderCalList(){var el=document.getElementById("cal-list");var mini=document.getElementById("cal-list-mini");var items=getCalItems().sort(function(a,b){return(a.date+(a.start||"99:99")).localeCompare(b.date+(b.start||"99:99"));});calItems=items;if(el){var today=TD(),up=items.filter(function(c){return c.date>=today;}).slice(0,30);if(up.length===0){el.innerHTML="<div style='text-align:center;color:var(--slate-400);padding:30px 0'>\u6682\u65e0\u65e5\u7a0b</div>";}else{el.innerHTML=up.map(function(c){var isT=c.date===today;return "<div style='display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;margin-bottom:8px;background:"+(isT?"var(--blue-50)":"var(--slate-50)")+"'><div style='min-width:48px;text-align:center'><div style='font-size:20px;font-weight:700;color:"+(isT?"var(--blue-500)":"var(--slate-700)")+"'>"+parseInt(c.date.slice(8))+"</div><div style='font-size:11px;color:var(--slate-400)'>"+parseInt(c.date.slice(5,7))+"\u6708</div></div><div style='flex:1'><div style='font-weight:600;font-size:14px'>"+ESC(c.title)+(c.start?" <span style='color:var(--blue-500);font-weight:400;font-size:13px'>"+c.start+(c.end?"-"+c.end:"")+"</span>":"")+"</div>"+(c.notes?"<div style='font-size:12px;color:var(--slate-400);margin-top:2px'>"+ESC(c.notes)+"</div>":"")+"</div><button onclick=\"showCalDetail('"+c.id+"')\" style='background:none;border:none;cursor:pointer;color:var(--rose-400);font-size:14px' title='\u5220\u9664'>\u2715</button></div>";}).join("");}}
 if(mini){var today2=TD(),todayItems=items.filter(function(c){return c.date===today2;});if(todayItems.length===0){mini.innerHTML="<div style='text-align:center;color:var(--slate-400);padding:16px 0;font-size:13px'>\u4eca\u65e5\u6682\u65e0\u65e5\u7a0b</div>";}else{mini.innerHTML=todayItems.map(function(c){return "<div style='display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--slate-100)'><div style='font-size:13px;font-weight:600;color:var(--blue-500);min-width:50px'>"+(c.start||"--:--")+"</div><div style='flex:1;font-size:13px'>"+ESC(c.title)+(c.notes?" <span style='color:var(--slate-400)'>"+ESC(c.notes)+"</span>":"")+"</div></div>";}).join("");}}}
