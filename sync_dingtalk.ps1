@@ -82,6 +82,19 @@ try {
         }
         
         $notes = if ($evt.description) { $evt.description -split "`n" | Select-Object -First 1 } else { "" }
+        $organizer = ""
+        if ($evt.organizer) {
+            if ($evt.organizer.displayName) {
+                $organizer = $evt.organizer.displayName
+            } elseif ($evt.organizer.name) {
+                $organizer = $evt.organizer.name
+            } else {
+                $organizer = [string]$evt.organizer
+            }
+        } elseif ($evt.organizerName) {
+            $organizer = $evt.organizerName
+        }
+        $eventId = if ($evt.id) { $evt.id } elseif ($evt.eventId) { $evt.eventId } elseif ($evt.iCalUID) { $evt.iCalUID } elseif ($evt.uid) { $evt.uid } else { "" }
         
         $events += @{
             title = $title
@@ -89,6 +102,9 @@ try {
             start = $startTime
             end = $endTime
             notes = $notes
+            organizer = $organizer
+            eventId = $eventId
+            dingtalkEventId = $eventId
         }
     }
     

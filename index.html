@@ -2307,7 +2307,8 @@ body:not(.dark) .cal-right-body.month-mode{
 overflow:hidden!important
 }
 body:not(.dark) .cal-month-view.active{
-height:100%
+height:100%;
+position:relative
 }
 body:not(.dark) .cal-month-grid{
 height:100%;
@@ -2377,8 +2378,8 @@ border-left:3px solid var(--cal-brand);
 font-weight:600!important
 }
 body:not(.dark) .cmv-evt{
-padding:3px 6px!important;
-margin-bottom:4px!important;
+padding:2px 6px!important;
+margin-bottom:3px!important;
 font-size:11px!important
 }
 body:not(.dark) .cmv-more{
@@ -2387,6 +2388,15 @@ padding:0 6px;
 background:#efe7da!important;
 color:var(--cal-text-muted)!important;
 border-radius:5px!important
+}
+body:not(.dark) .cmv-day-drawer{
+background:rgba(255,253,249,.98);
+border:1px solid var(--cal-line);
+box-shadow:0 18px 40px rgba(47,41,31,.16)
+}
+body:not(.dark) .cmv-drawer-item{
+background:#f8f4ec;
+border-color:var(--cal-line)
 }
 body:not(.dark) .cal-week-grid{
 gap:0!important;
@@ -2579,7 +2589,8 @@ body.dark .cal-right-body.month-mode{
 overflow:hidden!important
 }
 body.dark .cal-month-view.active{
-height:100%
+height:100%;
+position:relative
 }
 body.dark .cal-month-grid{
 height:100%;
@@ -2649,8 +2660,8 @@ border-left:3px solid var(--cal-brand);
 font-weight:600!important
 }
 body.dark .cmv-evt{
-padding:3px 6px!important;
-margin-bottom:4px!important;
+padding:2px 6px!important;
+margin-bottom:3px!important;
 font-size:11px!important
 }
 body.dark .cmv-more{
@@ -2659,6 +2670,25 @@ padding:0 6px;
 background:var(--cal-card-soft)!important;
 color:var(--cal-text-muted)!important;
 border-radius:5px!important
+}
+body.dark .cmv-day-drawer{
+background:rgba(10,21,30,.98);
+border:1px solid var(--cal-line);
+box-shadow:0 22px 48px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.03)
+}
+body.dark .cmv-drawer-item{
+background:var(--cal-card-soft);
+border-color:var(--cal-line)
+}
+body.dark .cmv-drawer-close{
+color:var(--cal-text-muted)
+}
+body.dark .cmv-drawer-close:hover{
+background:var(--cal-brand-soft);
+color:var(--cal-brand)
+}
+body.dark .cmv-drawer-time{
+color:var(--cal-brand)
 }
 body.dark .cal-week-grid{
 gap:0!important;
@@ -2700,6 +2730,453 @@ background:var(--cal-line)!important
 }
 body.dark .cal-hour-label{
 color:var(--cal-text-muted)!important
+}
+.cmv-cell{
+display:flex!important;
+flex-direction:column!important;
+overflow:visible!important;
+position:relative
+}
+.cmv-events{
+display:flex;
+flex-direction:column;
+min-height:0
+}
+.cmv-more{
+display:flex;
+align-items:center;
+width:max-content;
+max-width:100%;
+font-size:11px!important;
+font-weight:600!important;
+line-height:18px!important;
+cursor:pointer;
+transition:background .15s,color .15s
+}
+.cmv-more:hover{
+color:var(--cal-brand)!important
+}
+.cmv-day-drawer{
+position:absolute;
+left:var(--drawer-left,12px);
+top:var(--drawer-top,40px);
+right:auto;
+bottom:auto;
+width:320px;
+max-width:calc(100vw - 80px);
+z-index:80;
+border-radius:12px;
+padding:14px;
+backdrop-filter:blur(16px)
+}
+.cmv-drawer-head{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:12px;
+margin-bottom:10px
+}
+.cmv-drawer-title{
+font-size:14px;
+font-weight:700;
+color:var(--cal-text)
+}
+.cmv-drawer-sub{
+font-size:12px;
+font-weight:500;
+color:var(--cal-text-muted);
+margin-top:2px
+}
+.cmv-drawer-close{
+width:28px;
+height:28px;
+border:0;
+border-radius:8px;
+background:transparent;
+cursor:pointer;
+font-size:18px;
+line-height:28px;
+color:var(--cal-text-muted)
+}
+.cmv-drawer-close:hover{
+background:var(--cal-brand-soft);
+color:var(--cal-brand)
+}
+.cmv-drawer-list{
+display:grid;
+gap:8px;
+max-height:360px;
+overflow:auto;
+padding-right:2px
+}
+.cmv-drawer-item{
+display:flex;
+align-items:flex-start;
+gap:8px;
+border:0;
+border-radius:6px;
+padding:4px 2px;
+cursor:pointer
+}
+.cmv-drawer-item:hover{
+background:var(--cal-brand-soft)
+}
+.cmv-drawer-time{
+font-size:12px;
+font-weight:500;
+color:var(--cal-brand);
+white-space:nowrap
+}
+.cmv-drawer-name{
+font-size:13px;
+font-weight:700;
+color:var(--cal-text);
+overflow:hidden;
+text-overflow:ellipsis;
+white-space:nowrap
+}
+.cmv-drawer-note{
+margin-top:3px;
+font-size:12px;
+line-height:1.45;
+color:var(--cal-text-muted);
+display:-webkit-box;
+-webkit-line-clamp:2;
+-webkit-box-orient:vertical;
+overflow:hidden
+}
+.cal-right-body.month-mode{
+padding-top:12px!important;
+padding-bottom:12px!important;
+overflow:auto!important
+}
+.cal-right-body.month-mode .cal-month-grid{
+grid-template-rows:32px repeat(6,minmax(118px,1fr))!important;
+height:auto!important;
+min-height:100%;
+overflow:visible!important
+}
+.cal-right-body.month-mode .cmv-cell{
+padding:8px 9px!important;
+min-height:118px!important;
+gap:5px
+}
+.cal-right-body.month-mode .cmv-day{
+width:20px!important;
+height:20px!important;
+min-height:20px!important;
+margin-bottom:1px!important;
+font-size:11px!important;
+line-height:20px!important;
+flex:0 0 auto
+}
+.cal-right-body.month-mode .cmv-cell.sel{
+background:var(--cal-card)!important
+}
+.cal-right-body.month-mode .cmv-cell.sel .cmv-day{
+background:#1667f2!important;
+color:#fff!important;
+border-radius:8px!important;
+width:32px!important;
+height:32px!important;
+line-height:32px!important;
+font-size:20px!important;
+font-weight:700!important
+}
+.cal-right-body.month-mode .cmv-time{
+color:var(--cal-text-muted);
+font-weight:400
+}
+.cal-right-body.month-mode .cmv-events{
+gap:4px;
+overflow:visible;
+flex:1 1 auto
+}
+.cal-right-body.month-mode .cmv-evt{
+height:22px!important;
+min-height:22px!important;
+line-height:22px!important;
+padding:0!important;
+margin:0!important;
+font-size:12px!important;
+border-radius:0!important;
+box-shadow:none!important;
+white-space:nowrap;
+background:transparent!important;
+border-left:0!important;
+color:var(--cal-text-muted)!important;
+display:flex!important;
+align-items:center!important;
+gap:6px!important;
+font-weight:400!important;
+min-width:0
+}
+.cal-right-body.month-mode .cmv-evt::before{
+display:none!important
+}
+.cal-right-body.month-mode .cmv-dot,
+.cmv-drawer-dot{
+width:5px;
+height:5px;
+border-radius:50%;
+background:var(--cal-brand);
+border:0!important;
+flex:0 0 5px;
+opacity:.9!important;
+transform:none!important
+}
+.cal-right-body.month-mode .cmv-text{
+display:block;
+min-width:0;
+overflow:hidden;
+text-overflow:ellipsis;
+white-space:nowrap
+}
+.cal-right-body.month-mode .cmv-more{
+height:22px!important;
+min-height:22px!important;
+line-height:22px!important;
+padding:0!important;
+margin-top:0!important;
+font-size:12px!important;
+border-radius:0!important;
+background:transparent!important;
+color:#a9a29a!important;
+font-weight:400!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-evt,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-evt,
+body:not(.dark) #m-calendar .cmv-evt,
+body.dark #m-calendar .cmv-evt{
+background:transparent!important;
+border:0!important;
+border-left:0!important;
+box-shadow:none!important;
+border-radius:0!important;
+padding:0!important;
+margin:0!important;
+height:auto!important;
+min-height:40px!important;
+line-height:18px!important;
+font-size:12px!important;
+color:var(--cal-text-muted)!important;
+display:flex!important;
+align-items:flex-start!important;
+gap:6px!important;
+font-weight:400!important;
+overflow:visible!important;
+white-space:normal!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-evt::before,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-evt::before,
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-evt[data-note]::before,
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-evt[data-note]::after,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-evt[data-note]::before,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-evt[data-note]::after,
+body:not(.dark) #m-calendar .cmv-evt::before,
+body.dark #m-calendar .cmv-evt::before,
+body:not(.dark) #m-calendar .cmv-evt[data-note]::before,
+body:not(.dark) #m-calendar .cmv-evt[data-note]::after,
+body.dark #m-calendar .cmv-evt[data-note]::before,
+body.dark #m-calendar .cmv-evt[data-note]::after{
+display:none!important;
+content:none!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-dot,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-dot,
+body:not(.dark) #m-calendar .cmv-dot,
+body.dark #m-calendar .cmv-dot{
+margin-top:7px!important;
+flex:0 0 5px!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-text,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-text,
+body:not(.dark) #m-calendar .cmv-text,
+body.dark #m-calendar .cmv-text{
+display:block!important;
+min-width:0!important;
+line-height:18px!important;
+white-space:normal!important;
+overflow:visible!important;
+text-overflow:clip!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-more,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-more,
+body:not(.dark) #m-calendar .cmv-more,
+body.dark #m-calendar .cmv-more{
+height:22px!important;
+min-height:22px!important;
+line-height:22px!important;
+padding:0!important;
+margin:0!important;
+background:transparent!important;
+border:0!important;
+box-shadow:none!important;
+color:#a9a29a!important;
+font-size:12px!important;
+font-weight:400!important
+}
+#m-calendar .cal-right-body.month-mode{
+overflow:hidden!important;
+padding-top:12px!important;
+padding-bottom:12px!important
+}
+#m-calendar .cal-right-body.month-mode .cal-month-view.active{
+height:100%!important;
+min-height:0!important;
+position:relative!important;
+overflow:visible!important
+}
+#m-calendar .cal-right-body.month-mode .cal-month-grid{
+height:100%!important;
+min-height:0!important;
+grid-template-rows:32px repeat(6,minmax(0,1fr))!important;
+overflow:hidden!important
+}
+#m-calendar .cal-right-body.month-mode .cal-month-grid.rows-5{
+grid-template-rows:32px repeat(5,minmax(0,1fr))!important
+}
+#m-calendar .cal-right-body.month-mode .cal-month-grid.rows-6{
+grid-template-rows:32px repeat(6,minmax(0,1fr))!important
+}
+#m-calendar .cal-right-body.month-mode .cmv-cell{
+min-height:0!important;
+padding:6px 8px!important;
+gap:3px!important;
+overflow:hidden!important
+}
+#m-calendar .cal-right-body.month-mode .cmv-events{
+min-height:0!important;
+overflow:hidden!important;
+gap:2px!important
+}
+#m-calendar .cal-right-body.month-mode .cmv-evt{
+height:20px!important;
+min-height:20px!important;
+line-height:20px!important;
+align-items:center!important;
+overflow:hidden!important;
+white-space:nowrap!important
+}
+#m-calendar .cal-right-body.month-mode .cmv-dot{
+margin-top:0!important
+}
+#m-calendar .cal-right-body.month-mode .cmv-text{
+line-height:20px!important;
+white-space:nowrap!important;
+overflow:hidden!important;
+text-overflow:ellipsis!important
+}
+#m-calendar .cal-right-body.month-mode .cmv-more{
+height:20px!important;
+min-height:20px!important;
+line-height:20px!important;
+overflow:hidden!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-evt,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-evt{
+height:20px!important;
+min-height:20px!important;
+line-height:20px!important;
+align-items:center!important;
+overflow:hidden!important;
+white-space:nowrap!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-text,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-text{
+line-height:20px!important;
+white-space:nowrap!important;
+overflow:hidden!important;
+text-overflow:ellipsis!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-dot,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-dot{
+margin-top:0!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-cell.sel .cmv-day,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-cell.sel .cmv-day{
+background:var(--cal-brand)!important;
+color:#fff!important;
+width:18px!important;
+height:18px!important;
+min-height:18px!important;
+line-height:18px!important;
+border-radius:8px!important;
+font-size:12px!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-cell,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-cell{
+padding:2px 7px!important;
+gap:1px!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-day,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-day{
+width:18px!important;
+height:18px!important;
+min-height:18px!important;
+line-height:18px!important;
+font-size:11px!important;
+margin-bottom:0!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-evt,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-evt,
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-more,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-more{
+height:15px!important;
+min-height:15px!important;
+line-height:15px!important;
+font-size:11px!important
+}
+body:not(.dark) #m-calendar .cal-right-body.month-mode .cmv-text,
+body.dark #m-calendar .cal-right-body.month-mode .cmv-text{
+line-height:15px!important
+}
+.cal-now{
+display:flex!important;
+align-items:center;
+left:-64px!important;
+right:0!important;
+background:transparent!important;
+height:18px!important;
+pointer-events:none
+}
+.cal-now::before{
+content:""!important;
+position:absolute!important;
+left:58px!important;
+top:5px!important;
+width:8px!important;
+height:8px!important;
+border-radius:50%!important;
+background:var(--md-error)!important;
+box-shadow:0 0 0 4px rgba(186,26,26,.10)
+}
+.cal-now::after{
+content:""!important;
+position:absolute;
+left:66px;
+right:0;
+top:8px;
+height:2px;
+background:var(--md-error);
+opacity:.88
+}
+.cal-now-time{
+width:52px;
+padding-right:8px;
+text-align:right;
+font-size:11px;
+line-height:18px;
+font-weight:700;
+color:var(--md-error);
+font-variant-numeric:tabular-nums
+}
+body.dark .cal-now::before,
+body.dark .cal-now::after{
+background:#ff7d86!important
+}
+body.dark .cal-now-time{
+color:#ffb3b8
 }
 </style>
 <div class="cal-wrap">
@@ -2755,6 +3232,7 @@ color:var(--cal-text-muted)!important
 <div id="cmView">
 <div class="cmR" style="display:grid;grid-template-columns:auto 1fr;gap:10px;margin-bottom:8px;align-items:center"><span style="font-size:13px;color:#999;white-space:nowrap">时间 </span><span style="font-size:14px;color:#555" id="cmTime"></span></div>
 <div class="cmR" style="display:grid;grid-template-columns:auto 1fr;gap:10px;margin-bottom:8px;align-items:center"><span style="font-size:13px;color:#999;white-space:nowrap">日期 </span><span style="font-size:14px;color:#555" id="cmDate"></span></div>
+<div class="cmR" style="display:grid;grid-template-columns:auto 1fr;gap:10px;margin-bottom:8px;align-items:center"><span style="font-size:13px;color:#999;white-space:nowrap">创建人 </span><span style="font-size:14px;color:#555" id="cmCreator"></span></div>
 <div class="cmR" id="cmNotesRow" style="display:grid;grid-template-columns:auto 1fr;gap:10px;margin-bottom:8px;align-items:start"><span style="font-size:13px;color:#999;white-space:nowrap;padding-top:2px">备注 </span><span style="font-size:14px;color:#555;display:block;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.5" id="cmNotes"></span></div>
 <div style="display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid #eee">
 <button onclick="cEdit()" style="flex:1;padding:7px 0;border-radius:6px;cursor:pointer;font-size:13px;background:#4f46e5;color:#fff;border:none">编辑</button>
@@ -2784,11 +3262,22 @@ color:var(--cal-text-muted)!important
                         <p style="font-size:12px;color:var(--slate-400);margin-top:4px">将显示在工作概览页面的欢迎词中
                         </p>
                     </div>
+                    <div class="fg">
+                        <label>钉钉日程自动同步间隔（分钟）
+                        </label>
+                        <input type="number" id="dingtalk-sync-interval" min="1" max="1440" step="1" placeholder="例如：15" style="font-size:15px">
+                        <p style="font-size:12px;color:var(--slate-400);margin-top:4px">打开页面会先静默同步一次，之后按该间隔自动扫描并更新日程
+                        </p>
+                    </div>
                     
                     <button class="btn-go" onclick="saveSettings()" style="margin-top:8px">保存设置
                     </button>
                     <div style="margin-top:16px">
                         <span id="settings-status" style="font-size:13px;color:var(--slate-400)">
+                        </span>
+                    </div>
+                    <div style="margin-top:8px">
+                        <span id="dingtalk-sync-status" style="font-size:13px;color:var(--slate-400)">
                         </span>
                     </div>
 
@@ -3085,8 +3574,11 @@ function getCalItems(){if(SERVER_STATE)return JSON.parse(JSON.stringify(SERVER_S
 function saveCalItems(items){rawLocalSet("_cal",items);if(SERVER_STATE){SERVER_STATE.calendar=items;saveServerStateNow();}calItems=items;}
 window.addEventListener("pagehide",flushStateOnPageExit);
 window.addEventListener("beforeunload",flushStateOnPageExit);
-async function saveCalendar(){var t=document.getElementById("cal-title").value.trim(),d=document.getElementById("cal-date").value,ts=document.getElementById("cal-start").value,te=document.getElementById("cal-end").value,n=document.getElementById("cal-notes").value.trim();if(!t||!d){T("\u8bf7\u586b\u5199\u65e5\u7a0b\u6807\u9898\u548c\u65e5\u671f","w");return;}if(ts&&te&&ts>=te){T("\u7ed3\u675f\u65f6\u95f4\u9700\u665a\u4e8e\u5f00\u59cb\u65f6\u95f4","w");return;}var items=getCalItems();items.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),title:t,date:d,start:ts||"",end:te||"",notes:n,createdAt:new Date().toISOString()});saveCalItems(items);document.getElementById("cal-title").value="";document.getElementById("cal-date").value="";document.getElementById("cal-start").value="09:00";document.getElementById("cal-end").value="10:00";document.getElementById("cal-notes").value="";T("\u65e5\u7a0b\u5df2\u6dfb\u52a0","s");updateCalStats();renderCalList();renderCalGrid();renderCalTimeline();if(calViewMode==="month")renderCalMonthView();}
+async function saveCalendar(){var t=document.getElementById("cal-title").value.trim(),d=document.getElementById("cal-date").value,ts=document.getElementById("cal-start").value,te=document.getElementById("cal-end").value,n=document.getElementById("cal-notes").value.trim();if(!t||!d){T("\u8bf7\u586b\u5199\u65e5\u7a0b\u6807\u9898\u548c\u65e5\u671f","w");return;}if(ts&&te&&ts>=te){T("\u7ed3\u675f\u65f6\u95f4\u9700\u665a\u4e8e\u5f00\u59cb\u65f6\u95f4","w");return;}var items=getCalItems();items.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),title:t,date:d,start:ts||"",end:te||"",notes:n,source:"local",creator:getSetting("name","我"),createdAt:new Date().toISOString()});saveCalItems(items);document.getElementById("cal-title").value="";document.getElementById("cal-date").value="";document.getElementById("cal-start").value="09:00";document.getElementById("cal-end").value="10:00";document.getElementById("cal-notes").value="";T("\u65e5\u7a0b\u5df2\u6dfb\u52a0","s");updateCalStats();renderCalList();renderCalGrid();renderCalTimeline();if(calViewMode==="month")renderCalMonthView();}
 
+function creatorText(v){if(!v)return"";if(typeof v==="string")return v;if(typeof v==="object")return v.name||v.nick||v.displayName||v.userName||v.realName||v.title||"";return String(v);}
+function getCalendarCreator(c){var v=c&&creatorText(c.creator||c.createdBy||c.organizer||c.organizerName);if(v)return v;if(c&&c.source==="dingtalk")return"钉钉日程";return getSetting("name","我");}
+function getDingtalkCreator(evt){return creatorText(evt&&(evt.organizer||evt.organizerName||evt.creator||evt.creatorName||evt.createdBy||evt.createdByName||evt.owner||evt.ownerName||evt.host||evt.hostName))||"钉钉日程";}
 var cid=null;
 function showCalDetail(id){
 var items=getCalItems();
@@ -3096,6 +3588,7 @@ cid=id;
 document.getElementById("cmTitle").textContent=c.title;
 document.getElementById("cmTime").textContent=(c.start||"--:--")+(c.end?" - "+c.end:"");
 document.getElementById("cmDate").textContent=c.date;
+document.getElementById("cmCreator").textContent=getCalendarCreator(c);
 var nr=document.getElementById("cmNotesRow");
 if(c.notes){nr.style.display="grid";document.getElementById("cmNotes").textContent=c.notes;}
 else{nr.style.display="none";}
@@ -3132,14 +3625,41 @@ if(s&&e&&s>=e){alert("结束时间需晚于开始时间");return;}
 var items=getCalItems();for(var i=0;i<items.length;i++){if(items[i].id===id){items[i].title=t;items[i].date=d;items[i].start=s||"";items[i].end=e||"";items[i].notes=n;break;}}
 saveCalItems(items);alert("已保存");cClose();updateCalStats();renderCalList();renderCalGrid();renderCalTimeline();if(calViewMode==="month")renderCalMonthView();
 }
-function cDel(){var id=cid;if(!id)return;if(!confirm("确定删除?"))return;delCal(id);cClose();}
-async function delCal(id){if(!confirm("\u786e\u5b9a\u5220\u9664?"))return;var items=getCalItems().filter(function(c){return c.id!==id;});saveCalItems(items);T("\u65e5\u7a0b\u5df2\u5220\u9664","i");updateCalStats();renderCalList();if(calViewMode==="month")renderCalMonthView();}
+function getDingtalkEventId(c){return c&&(c.dingtalkEventId||c.eventId||c.iCalUID||c.uid||c.dingtalkId||"");}
+async function deleteDingtalkCalendarEvent(c){
+  var eventId=getDingtalkEventId(c);
+  if(!eventId)throw new Error("缺少钉钉日程ID，请先重新同步一次钉钉日程");
+  var res=await fetch("/delete-calendar-event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId:eventId})});
+  var text=await res.text(),data={};
+  try{data=JSON.parse(text||"{}");}catch(e){}
+  if(!res.ok||data.success===false)throw new Error(data.error||text||("HTTP "+res.status));
+  return data;
+}
+async function cDel(){var id=cid;if(!id)return;if(!confirm("确定删除?"))return;var ok=await delCal(id);if(ok)cClose();}
+async function delCal(id){var items=getCalItems();var target=items.find(function(c){return c.id===id;});if(!target)return false;if(target.source==="dingtalk"){try{await deleteDingtalkCalendarEvent(target);}catch(e){T("钉钉端删除失败："+(e&&e.message?e.message:e),"w");return false;}}items=items.filter(function(c){return c.id!==id;});saveCalItems(items);T(target.source==="dingtalk"?"钉钉日程已删除":"日程已删除","i");updateCalStats();renderCalList();if(calViewMode==="month")renderCalMonthView();return true;}
 var DINGTALK_SYNC_BUTTON_HTML=I("dingtalk","icon-sm")+'<span>同步钉钉日程</span>';
 function resetSyncButton(btn){if(btn){btn.disabled=false;btn.innerHTML=DINGTALK_SYNC_BUTTON_HTML;}}
-function syncFromDingtalk(){
-  var btn=document.querySelector("button[onclick*='syncFromDingtalk']");
+function syncFromDingtalk(options){
+  options=options||{};
+  var silent=!!options.silent;
+  var btn=silent?null:document.querySelector("button[onclick*='syncFromDingtalk']");
+  var syncStatus=document.getElementById("dingtalk-sync-status");
+  function setSyncStatus(msg,isError){
+    if(!syncStatus)return;
+    syncStatus.textContent=msg||"";
+    syncStatus.style.color=isError?"var(--rose-500)":"var(--slate-400)";
+  }
+  function syncNow(url){
+    return fetch(url||"/sync-calendar").then(function(r){
+      return r.text().then(function(text){if(!r.ok){try{var d=JSON.parse(text);throw new Error(readDwsError(d)||("HTTP "+r.status));}catch(ex){throw new Error(ex.message||("HTTP "+r.status));}}return text;});
+    });
+  }
   function doImport(data){
-    if(!data||data.length===0){T("未获取到钉钉日程","i");return;}
+    if(!data||data.length===0){
+      if(!silent)T("未获取到钉钉日程","i");
+      setSyncStatus("钉钉日程同步：未获取到日程，"+new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"}),false);
+      return{added:0,removed:0,total:0};
+    }
     var local=getCalItems();
     var existing=new Set(local.map(function(x){return x.date+"|"+x.title+"|"+(x.start||"")+"|"+(x.end||"");}));
     var newKeys=new Set();
@@ -3154,17 +3674,23 @@ function syncFromDingtalk(){
     data.forEach(function(evt){
       var key=evt.date+"|"+evt.title+"|"+(evt.start||"")+"|"+(evt.end||"");
       if(!existing.has(key)){
-        remaining.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),title:evt.title,date:evt.date,start:evt.start||"",end:evt.end||"",notes:evt.notes||"",source:"dingtalk",createdAt:new Date().toISOString()});
+        remaining.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),title:evt.title,date:evt.date,start:evt.start||"",end:evt.end||"",notes:evt.notes||"",source:"dingtalk",dingtalkEventId:evt.dingtalkEventId||evt.eventId||evt.id||evt.iCalUID||"",creator:getDingtalkCreator(evt),creatorSource:"dingtalk",createdAt:new Date().toISOString()});
         added++;
+      }else{
+        remaining.forEach(function(x){var k=x.date+"|"+x.title+"|"+(x.start||"")+"|"+(x.end||"");if(k===key&&x.source==="dingtalk"){x.dingtalkEventId=evt.dingtalkEventId||evt.eventId||evt.id||evt.iCalUID||x.dingtalkEventId||"";x.creator=getDingtalkCreator(evt);x.creatorSource="dingtalk";}});
       }
     });
     saveCalItems(remaining);
     var msgs=[];
     if(added>0)msgs.push("新增 "+added+" 条");
     if(removed>0)msgs.push("移除 "+removed+" 条已取消日程");
-    if(msgs.length)T("同步完成："+msgs.join("，"),"s");
-    else T("日程已是最新","i");
+    if(!silent){
+      if(msgs.length)T("同步完成："+msgs.join("，"),"s");
+      else T("日程已是最新","i");
+    }
+    setSyncStatus("钉钉日程同步："+(msgs.length?msgs.join("，"):"已是最新")+"，"+new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"}),false);
     updateCalStats();renderCalList();renderCalGrid();renderCalTimeline();if(calViewMode==="month")renderCalMonthView();
+    return{added:added,removed:removed,total:data.length};
   }
   function readDwsError(data){
     if(!data)return"";
@@ -3210,7 +3736,8 @@ function syncFromDingtalk(){
       var ed=(e.end&&(e.end.dateTime||e.end.date||e.end.time))||e.endTime||e.finishTime||e.end||"";
       var start=parseDateTime(sd),end=parseDateTime(ed);
       var notes=e.description||e.desc||e.notes||e.location||"";
-      if(start.date)events.push({title:title,date:start.date,start:start.time,end:end.time,notes:String(notes).split("\n")[0]});
+      var eventId=e.id||e.eventId||e.iCalUID||e.uid||"";
+      if(start.date)events.push({title:title,date:start.date,start:start.time,end:end.time,notes:String(notes).split("\n")[0],organizer:e.organizer||e.organizerName||"",eventId:eventId,dingtalkEventId:eventId});
     });
     return events;
   }
@@ -3226,14 +3753,18 @@ function syncFromDingtalk(){
     });
   }
   if(btn){btn.disabled=true;btn.innerHTML=I("sync","icon-sm icon-spin")+'<span>同步中...</span>';}
-  fetch("/sync-calendar").then(function(r){
-    return r.text().then(function(text){if(!r.ok){try{var d=JSON.parse(text);throw new Error(readDwsError(d)||("HTTP "+r.status));}catch(ex){throw new Error(ex.message||("HTTP "+r.status));}}return text;});
-  }).then(function(text){
+  return syncNow().then(function(text){
     var data=parseEvents(text);
-    doImport(data);
+    var result=doImport(data);
     resetSyncButton(btn);
+    return result;
   }).catch(function(e){
     if(syncErrorMessage(e).indexOf("钉钉未登录")===0){
+      if(silent){
+        setSyncStatus("钉钉日程自动同步暂停：请先完成钉钉登录授权",true);
+        resetSyncButton(btn);
+        throw e;
+      }
       T(syncErrorMessage(e),"i");
       startDwsAuth().then(function(){
         T("授权页已打开，完成授权后请再次点击同步","s");
@@ -3245,26 +3776,53 @@ function syncFromDingtalk(){
       return;
     }
     // 服务没启动，尝试后台启动
-    T("正在启动同步服务...","i");
+    if(!silent)T("正在启动同步服务...","i");
     try{
       var a=document.createElement("a");
       a.href="dws_server.vbs";
       a.target="_blank";
       a.click();
     }catch(ee){}
-    setTimeout(function(){
-      fetch("/sync-calendar").then(function(r2){
-        return r2.text().then(function(text2){if(!r2.ok){try{var d2=JSON.parse(text2);throw new Error(readDwsError(d2)||("HTTP "+r2.status));}catch(ex2){throw new Error(ex2.message||("HTTP "+r2.status));}}return text2;});
-      }).then(function(text2){
+    return new Promise(function(resolve,reject){
+      setTimeout(function(){
+        syncNow().then(function(text2){
         var data=parseEvents(text2);
-        doImport(data);
+        var result=doImport(data);
         resetSyncButton(btn);
+        resolve(result);
       }).catch(function(e2){
-        T(syncErrorMessage(e2),"w");
+        if(!silent)T(syncErrorMessage(e2),"w");
+        else setSyncStatus("钉钉日程自动同步失败："+(e2&&e2.message?e2.message:String(e2||"未知错误")),true);
         resetSyncButton(btn);
+        reject(e2);
       });
-    }, 2000);
+      }, 2000);
+    });
   });
+}
+var DINGTALK_AUTO_SYNC_TIMER=null,DINGTALK_AUTO_SYNC_RUNNING=false;
+function getDingtalkSyncIntervalMinutes(){
+  var raw=LS("dingtalk_sync_interval");
+  var n=parseInt(raw,10);
+  if(!isFinite(n)||n<1)n=15;
+  if(n>1440)n=1440;
+  return n;
+}
+function scheduleDingtalkAutoSync(){
+  clearInterval(DINGTALK_AUTO_SYNC_TIMER);
+  var minutes=getDingtalkSyncIntervalMinutes();
+  DINGTALK_AUTO_SYNC_TIMER=setInterval(function(){runDingtalkAutoSync("timer");},minutes*60000);
+  var syncStatus=document.getElementById("dingtalk-sync-status");
+  if(syncStatus&&!syncStatus.textContent)syncStatus.textContent="钉钉日程自动同步已开启：每 "+minutes+" 分钟扫描一次";
+}
+function runDingtalkAutoSync(reason){
+  if(DINGTALK_AUTO_SYNC_RUNNING)return Promise.resolve(null);
+  DINGTALK_AUTO_SYNC_RUNNING=true;
+  return syncFromDingtalk({silent:true,reason:reason}).catch(function(e){return null;}).finally(function(){DINGTALK_AUTO_SYNC_RUNNING=false;});
+}
+function startAutoDingtalkSync(){
+  scheduleDingtalkAutoSync();
+  setTimeout(function(){runDingtalkAutoSync("page-open");},800);
 }
 function updateCalStats(){var items=getCalItems();document.getElementById("d-cal-today").textContent=items.filter(function(c){return c.date===TD();}).length;document.getElementById("d-cal-week").textContent=items.filter(function(c){return IW(c.date);}).length;document.getElementById("d-cal-month").textContent=items.filter(function(c){return IM(c.date);}).length;}
 function renderCalList(){var el=document.getElementById("cal-list");var mini=document.getElementById("cal-list-mini");var items=getCalItems().sort(function(a,b){return(a.date+(a.start||"99:99")).localeCompare(b.date+(b.start||"99:99"));});calItems=items;if(el){var today=TD(),up=items.filter(function(c){return c.date>=today;}).slice(0,30);if(up.length===0){el.innerHTML="<div style='text-align:center;color:var(--slate-400);padding:30px 0'>\u6682\u65e0\u65e5\u7a0b</div>";}else{el.innerHTML=up.map(function(c){var isT=c.date===today;return "<div style='display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;margin-bottom:8px;background:"+(isT?"var(--blue-50)":"var(--slate-50)")+"'><div style='min-width:48px;text-align:center'><div style='font-size:20px;font-weight:700;color:"+(isT?"var(--blue-500)":"var(--slate-700)")+"'>"+parseInt(c.date.slice(8))+"</div><div style='font-size:11px;color:var(--slate-400)'>"+parseInt(c.date.slice(5,7))+"\u6708</div></div><div style='flex:1'><div style='font-weight:600;font-size:14px'>"+ESC(c.title)+(c.start?" <span style='color:var(--blue-500);font-weight:400;font-size:13px'>"+c.start+(c.end?"-"+c.end:"")+"</span>":"")+"</div>"+(c.notes?"<div style='font-size:12px;color:var(--slate-400);margin-top:2px'>"+ESC(c.notes)+"</div>":"")+"</div><button onclick=\"showCalDetail('"+c.id+"')\" style='background:none;border:none;cursor:pointer;color:var(--rose-400);font-size:14px' title='\u5220\u9664'>\u2715</button></div>";}).join("");}}
@@ -3286,51 +3844,42 @@ function renderCalendarCurrentView(){if(calViewMode==="month")renderCalMonthView
 function openCalendarOverview(mode){var today=TD();calSelDate=today;calViewDate=dateFromStr(today);renderCalGrid();switchTo("calendar");setCalView(mode);}
 function setCalView(mode){calViewMode=mode;document.getElementById("cal-btn-month").classList.toggle("active",mode==="month");document.getElementById("cal-btn-week").classList.toggle("active",mode==="week");document.getElementById("cal-btn-day").classList.toggle("active",mode==="day");document.getElementById("cal-month-view").classList.toggle("active",mode==="month");document.getElementById("cal-week-view").classList.toggle("active",mode==="week");document.getElementById("cal-day-view").classList.toggle("active",mode==="day");document.getElementById("cal-right-body").classList.toggle("month-mode",mode==="month");renderCalendarCurrentView();}
 function calSelectDate(ds){calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalendarCurrentView();}
-function switchTo(m){CM=m;document.querySelectorAll(".nav-item[data-m]").forEach(function(el){el.classList.toggle("active",el.dataset.m===m);});document.querySelectorAll(".module").forEach(function(el){el.classList.toggle("active",el.id==="m-"+m);});var titles={dashboard:"工作概览",tasks:"任务跟踪",calendar:"日程管理",analytics:"数据分析",settings:"设置"};document.getElementById("pg-title").textContent=titles[m];document.getElementById("sidebar-action").style.display=(m==="tasks"||m==="dashboard")?"flex":"none";if(m==="tasks")R();if(m==="settings")loadSettings();if(m==="dashboard")renderDashboard();if(m==="calendar"){renderCalGrid();renderCalendarCurrentView();}}
-function renderCalMonthView(){var el=document.getElementById("cal-month-view");if(!el)return;var base=new Date(calViewDate.getFullYear(),calViewDate.getMonth(),1),y=base.getFullYear(),mo=base.getMonth(),first=new Date(y,mo,1).getDay(),dim=new Date(y,mo+1,0).getDate(),prevDim=new Date(y,mo,0).getDate(),today=TD(),items=getCalItems(),wk=["日","一","二","三","四","五","六"];var colors=["#4f46e5","#7c3aed","#2563eb","#0891b2","#059669","#d97706","#dc2626"];var lb=document.getElementById("cal-day-label");if(lb)lb.textContent=y+"年"+(mo+1)+"月";var h="<div class='cal-month-grid'>";wk.forEach(function(w){h+="<div class='cmv-head'>"+w+"</div>";});for(var i=first-1;i>=0;i--){var pd=prevDim-i;h+="<div class='cmv-cell om'><div class='cmv-day'>"+pd+"</div></div>";}for(var d=1;d<=dim;d++){var ds=y+"-"+String(mo+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");var cls="cmv-cell";if(ds===today)cls+=" today";if(ds===calSelDate)cls+=" sel";var dayItems=items.filter(function(c){return c.date===ds;}).sort(function(a,b){return (a.start||"00:00").localeCompare(b.start||"00:00");});h+="<div class='"+cls+"' onclick='calSelectDate(\""+ds+"\");setCalView(\"day\")'>";h+="<div class='cmv-day'>"+d+"</div>";dayItems.slice(0,2).forEach(function(c,idx){var ci=colors[idx%colors.length];h+="<div class='cmv-evt'"+NOTE_ATTR(c.notes)+" style='background:"+ci+"' onclick='event.stopPropagation();showCalDetail(\""+c.id+"\")'>"+ESC(c.title)+"</div>";});if(dayItems.length>2)h+="<div class='cmv-more' onclick='event.stopPropagation();calSelectDate(\""+ds+"\");setCalView(\"day\")'>+"+(dayItems.length-2)+"</div>";h+="</div>";}var total=first+dim,rem=total%7===0?0:7-total%7;for(var j=1;j<=rem;j++){h+="<div class='cmv-cell om'><div class='cmv-day'>"+j+"</div></div>";}h+="</div>";el.innerHTML=h;}
+function switchTo(m){CM=m;document.querySelectorAll(".nav-item[data-m]").forEach(function(el){el.classList.toggle("active",el.dataset.m===m);});document.querySelectorAll(".module").forEach(function(el){el.classList.toggle("active",el.id==="m-"+m);});var titles={dashboard:"工作概览",tasks:"任务跟踪",calendar:"日程管理",analytics:"数据分析",settings:"设置"};document.getElementById("pg-title").textContent=titles[m];document.getElementById("sidebar-action").style.display=(m==="tasks"||m==="dashboard")?"flex":"none";if(m==="tasks")R();if(m==="settings")loadSettings();if(m==="dashboard")renderDashboard();if(m==="calendar"){renderCalGrid();setCalView(calViewMode||"month");}}
+var MONTH_DRAWER_DATE="";
+function monthDateLabel(ds){var d=dateFromStr(ds),wk=["周日","周一","周二","周三","周四","周五","周六"];return (d.getMonth()+1)+"月"+d.getDate()+"日 "+wk[d.getDay()];}
+function openMonthDayDrawer(ds){MONTH_DRAWER_DATE=ds;calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalMonthView();}
+function closeMonthDayDrawer(){MONTH_DRAWER_DATE="";renderCalMonthView();}
+function monthEventLine(c,showTime){var time=showTime&&c.start?'<span class="cmv-time">'+ESC(c.start)+'</span> ':"";return "<span class='cmv-dot'></span><span class='cmv-text'>"+time+ESC(c.title)+"</span>";}
+function renderMonthDayDrawer(ds,items){var dayItems=items.filter(function(c){return c.date===ds;}).sort(function(a,b){return (a.start||"99:99").localeCompare(b.start||"99:99");});if(!ds||!dayItems.length)return"";var h="<div class='cmv-day-drawer' onclick='event.stopPropagation()'><div class='cmv-drawer-head'><div><div class='cmv-drawer-title'>"+monthDateLabel(ds)+"</div><div class='cmv-drawer-sub'>共 "+dayItems.length+" 项日程</div></div><button class='cmv-drawer-close' onclick='closeMonthDayDrawer()' title='关闭'>×</button></div><div class='cmv-drawer-list'>";dayItems.forEach(function(c){var time=c.start?ESC(c.start):"全天";h+="<div class='cmv-drawer-item' onclick='showCalDetail(\""+c.id+"\")'><span class='cmv-drawer-dot'></span><div><div class='cmv-drawer-name'>"+(c.start?"<span class='cmv-drawer-time'>"+time+"</span> ":"")+ESC(c.title)+"</div>"+(c.notes?"<div class='cmv-drawer-note'>"+ESC(c.notes)+"</div>":"")+"</div></div>";});h+="</div></div>";return h;}
+function renderCalMonthView(){var el=document.getElementById("cal-month-view");if(!el)return;var base=new Date(calViewDate.getFullYear(),calViewDate.getMonth(),1),y=base.getFullYear(),mo=base.getMonth(),first=new Date(y,mo,1).getDay(),dim=new Date(y,mo+1,0).getDate(),prevDim=new Date(y,mo,0).getDate(),today=TD(),items=getCalItems(),wk=["日","一","二","三","四","五","六"],visibleCount=3;var total=first+dim,targetCells=total<=35?35:42,rowCount=targetCells/7;var lb=document.getElementById("cal-day-label");if(lb)lb.textContent=y+"年"+(mo+1)+"月";if(MONTH_DRAWER_DATE){var dd=dateFromStr(MONTH_DRAWER_DATE);if(dd.getFullYear()!==y||dd.getMonth()!==mo)MONTH_DRAWER_DATE="";}var h="<div class='cal-month-grid rows-"+rowCount+"'>";wk.forEach(function(w){h+="<div class='cmv-head'>"+w+"</div>";});for(var i=first-1;i>=0;i--){var pd=prevDim-i;h+="<div class='cmv-cell om'><div class='cmv-day'>"+pd+"</div></div>";}for(var d=1;d<=dim;d++){var ds=y+"-"+String(mo+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");var cls="cmv-cell";if(ds===today)cls+=" today";if(ds===calSelDate)cls+=" sel";var dayItems=items.filter(function(c){return c.date===ds;}).sort(function(a,b){return (a.start||"99:99").localeCompare(b.start||"99:99");});h+="<div class='"+cls+"' onclick='calSelectDate(\""+ds+"\")'>";h+="<div class='cmv-day'>"+d+"</div><div class='cmv-events'>";dayItems.slice(0,visibleCount).forEach(function(c){h+="<div class='cmv-evt' onclick='event.stopPropagation();showCalDetail(\""+c.id+"\")'>"+monthEventLine(c,true)+"</div>";});if(dayItems.length>visibleCount)h+="<div class='cmv-more' onclick='event.stopPropagation();openMonthDayDrawer(\""+ds+"\")'>还有 "+(dayItems.length-visibleCount)+" 项...</div>";h+="</div>"+(MONTH_DRAWER_DATE===ds?renderMonthDayDrawer(ds,items):"")+"</div>";}var rem=Math.max(0,targetCells-total);for(var j=1;j<=rem;j++){h+="<div class='cmv-cell om'><div class='cmv-day'>"+j+"</div></div>";}h+="</div>";el.innerHTML=h;}
+function setCalView(mode){calViewMode=mode;if(mode!=="month")MONTH_DRAWER_DATE="";document.getElementById("cal-btn-month").classList.toggle("active",mode==="month");document.getElementById("cal-btn-week").classList.toggle("active",mode==="week");document.getElementById("cal-btn-day").classList.toggle("active",mode==="day");document.getElementById("cal-month-view").classList.toggle("active",mode==="month");document.getElementById("cal-week-view").classList.toggle("active",mode==="week");document.getElementById("cal-day-view").classList.toggle("active",mode==="day");document.getElementById("cal-right-body").classList.toggle("month-mode",mode==="month");renderCalendarCurrentView();}
+function positionMonthDayDrawer(ds){var view=document.getElementById("cal-month-view"),drawer=document.querySelector("#cal-month-view .cmv-day-drawer"),cell=document.querySelector("#cal-month-view .cmv-cell[data-date='"+ds+"']");if(!view||!drawer||!cell)return;var vr=view.getBoundingClientRect(),cr=cell.getBoundingClientRect(),dw=drawer.offsetWidth||320,dh=drawer.offsetHeight||260;var left=cr.left-vr.left+10,top=cr.top-vr.top+36;left=Math.max(12,Math.min(left,view.clientWidth-dw-12));top=Math.max(44,Math.min(top,view.clientHeight-dh-12));drawer.style.setProperty("--drawer-left",left+"px");drawer.style.setProperty("--drawer-top",top+"px");}
+function openMonthDayDrawer(ds){MONTH_DRAWER_DATE=ds;calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalMonthView();}
+function closeMonthDayDrawer(){MONTH_DRAWER_DATE="";renderCalMonthView();}
+function renderCalMonthView(){var el=document.getElementById("cal-month-view");if(!el)return;var base=new Date(calViewDate.getFullYear(),calViewDate.getMonth(),1),y=base.getFullYear(),mo=base.getMonth(),first=new Date(y,mo,1).getDay(),dim=new Date(y,mo+1,0).getDate(),prevDim=new Date(y,mo,0).getDate(),today=TD(),items=getCalItems(),wk=["日","一","二","三","四","五","六"],visibleCount=3;var total=first+dim,targetCells=total<=35?35:42,rowCount=targetCells/7;var lb=document.getElementById("cal-day-label");if(lb)lb.textContent=y+"年"+(mo+1)+"月";if(MONTH_DRAWER_DATE){var dd=dateFromStr(MONTH_DRAWER_DATE);if(dd.getFullYear()!==y||dd.getMonth()!==mo)MONTH_DRAWER_DATE="";}var h="<div class='cal-month-grid rows-"+rowCount+"'>";wk.forEach(function(w){h+="<div class='cmv-head'>"+w+"</div>";});for(var i=first-1;i>=0;i--){var pd=prevDim-i;h+="<div class='cmv-cell om'><div class='cmv-day'>"+pd+"</div></div>";}for(var d=1;d<=dim;d++){var ds=y+"-"+String(mo+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");var cls="cmv-cell";if(ds===today)cls+=" today";if(ds===calSelDate)cls+=" sel";var dayItems=items.filter(function(c){return c.date===ds;}).sort(function(a,b){return (a.start||"99:99").localeCompare(b.start||"99:99");});h+="<div class='"+cls+"' data-date='"+ds+"' onclick='calSelectDate(\""+ds+"\")'>";h+="<div class='cmv-day'>"+d+"</div><div class='cmv-events'>";dayItems.slice(0,visibleCount).forEach(function(c){h+="<div class='cmv-evt' onclick='event.stopPropagation();showCalDetail(\""+c.id+"\")'>"+monthEventLine(c,true)+"</div>";});if(dayItems.length>visibleCount)h+="<div class='cmv-more' onclick='event.stopPropagation();openMonthDayDrawer(\""+ds+"\")'>还有 "+(dayItems.length-visibleCount)+" 项...</div>";h+="</div></div>";}var rem=Math.max(0,targetCells-total);for(var j=1;j<=rem;j++){h+="<div class='cmv-cell om'><div class='cmv-day'>"+j+"</div></div>";}h+="</div>"+(MONTH_DRAWER_DATE?renderMonthDayDrawer(MONTH_DRAWER_DATE,items):"");el.innerHTML=h;if(MONTH_DRAWER_DATE)requestAnimationFrame(function(){positionMonthDayDrawer(MONTH_DRAWER_DATE);});}
 function renderCalWeekView(){var el=document.getElementById("cal-week-view");if(!el)return;var anchor=dateFromStr(calSelDate||TD()),start=startOfWeekDate(anchor),today=TD(),items=getCalItems(),colors=["#4f46e5","#7c3aed","#2563eb","#0891b2","#059669","#d97706","#dc2626"],weekNames=["周一","周二","周三","周四","周五","周六","周日"],lb=document.getElementById("cal-day-label");if(lb){var end=endOfWeekDate(anchor);lb.textContent=(start.getMonth()+1)+"月"+start.getDate()+"日 - "+(end.getMonth()+1)+"月"+end.getDate()+"日";}var h="<div class='cal-week-grid'>";for(var i=0;i<7;i++){var day=new Date(start);day.setDate(start.getDate()+i);var ds=fmtDateStr(day),dayItems=items.filter(function(c){return c.date===ds;}).sort(function(a,b){return (a.start||"99:99").localeCompare(b.start||"99:99");});h+="<div class='cal-week-col"+(ds===today?" is-today":"")+"'>";h+="<div class='cal-week-head'><div class='cal-week-name'>"+weekNames[i]+"</div><div class='cal-week-date'>"+day.getDate()+"</div></div>";if(!dayItems.length){h+="<div class='cal-week-empty'>暂无日程</div>";}else{h+="<div class='cal-week-items'>";dayItems.forEach(function(c,idx){var ci=colors[idx%colors.length],timeStr=(c.start||"--:--")+(c.end?"-"+c.end:"");h+="<div class='cal-week-event'"+NOTE_ATTR(c.notes)+" style='background:"+ci+"' onclick='showCalDetail(\""+c.id+"\")'><div class='cal-week-event-title'>"+ESC(c.title)+"</div><div class='cal-week-event-time'>"+timeStr+"</div>"+(c.notes?"<div class='cal-event-note'>"+ESC(TRUNC_TEXT(c.notes,24))+"</div>":"")+"</div>";});h+="</div>";}h+="</div>";}h+="</div>";el.innerHTML=h;}
 function renderCalTimeline(){var lb=document.getElementById("cal-day-label");var ds=calSelDate||TD();if(lb){var p=ds.split("-");lb.textContent=parseInt(p[1])+"月"+parseInt(p[2])+"日 星期"+["日","一","二","三","四","五","六"][new Date(ds).getDay()];}var tl=document.getElementById("cal-timeline");if(!tl)return;var items=getCalItems().filter(function(c){return c.date===ds;}).sort(function(a,b){return (a.start||"00:00").localeCompare(b.start||"00:00");});var colors=["#4f46e5","#7c3aed","#2563eb","#0891b2","#059669","#d97706","#dc2626"];var h="";for(var hr=0;hr<24;hr++){h+="<div class=\"cal-hour\" style=\"height:48px\">";h+="<div class=\"cal-hour-label\">"+String(hr).padStart(2,"0")+":00</div>";h+="<div class=\"cal-hour-line\"></div>";var evts=items.filter(function(c){var t=(c.start||"00:00").split(":");return parseInt(t[0])===hr;});evts.forEach(function(c,idx){var startMin=c.start?parseInt(c.start.split(":")[0])*60+parseInt(c.start.split(":")[1]):0;var endMin=c.end?parseInt(c.end.split(":")[0])*60+parseInt(c.end.split(":")[1]):startMin+60;var durationH=Math.max((endMin-startMin)/60,0.5);var topOffset=((startMin%60)/60)*48;var evtH=durationH*48;var ci=colors[idx%colors.length];var timeStr=c.start+(c.end?"-"+c.end:"");h+="<div class=\"cal-event\""+NOTE_ATTR(c.notes)+" style=\"top:"+topOffset+"px;left:"+(idx*120+4)+"px;width:"+(idx>0?116:228)+"px;height:"+evtH+"px;background:"+ci+"\" onclick=\"showCalDetail('"+c.id+"')\"><div style=\"font-weight:600;font-size:12px\">"+ESC(c.title)+"</div>"+(timeStr?"<div style=\"font-size:11px;opacity:0.8\">"+timeStr+"</div>":"")+(c.notes?"<div class=\"cal-event-note\">"+ESC(TRUNC_TEXT(c.notes,28))+"</div>":"")+"</div>";});h+="</div>";}if(ds===TD()){var now=new Date(),nm=now.getHours()*60+now.getMinutes(),nh=(nm/60)*48;h+="<div class=\"cal-now\" style=\"top:"+nh+"px\"></div>";}tl.innerHTML=h;}
+var DAY_NOW_TIMER=null;
+function nowTimeText(){var n=new Date();return String(n.getHours()).padStart(2,"0")+":"+String(n.getMinutes()).padStart(2,"0");}
+function dayHourHeight(){var h=document.querySelector("#cal-timeline .cal-hour");return h?h.getBoundingClientRect().height:56;}
+function updateCalNowLine(){var ds=calSelDate||TD(),line=document.querySelector("#cal-timeline .cal-now");if(!line)return;if(ds!==TD()||calViewMode!=="day"){line.style.display="none";return;}var n=new Date(),minutes=n.getHours()*60+n.getMinutes(),top=minutes/60*dayHourHeight();line.style.display="flex";line.style.top=top+"px";var txt=line.querySelector(".cal-now-time");if(txt)txt.textContent=nowTimeText();}
+function ensureDayNowTicker(){if(DAY_NOW_TIMER)return;DAY_NOW_TIMER=setInterval(updateCalNowLine,30000);}
+function scrollDayViewToNow(){if(calViewMode!=="day"||(calSelDate||TD())!==TD())return;requestAnimationFrame(function(){updateCalNowLine();var body=document.getElementById("cal-right-body"),line=document.querySelector("#cal-timeline .cal-now");if(!body||!line||line.style.display==="none")return;var top=parseFloat(line.style.top||"0");body.scrollTo({top:Math.max(0,top-body.clientHeight*.42),behavior:"smooth"});});}
+function renderCalTimeline(){var lb=document.getElementById("cal-day-label");var ds=calSelDate||TD();if(lb){var p=ds.split("-");lb.textContent=parseInt(p[1])+"月"+parseInt(p[2])+"日 星期"+["日","一","二","三","四","五","六"][new Date(ds).getDay()];}var tl=document.getElementById("cal-timeline");if(!tl)return;var items=getCalItems().filter(function(c){return c.date===ds;}).sort(function(a,b){return (a.start||"00:00").localeCompare(b.start||"00:00");});var colors=["#4f46e5","#7c3aed","#2563eb","#0891b2","#059669","#d97706","#dc2626"];var h="";for(var hr=0;hr<24;hr++){h+="<div class=\"cal-hour\" style=\"height:48px\">";h+="<div class=\"cal-hour-label\">"+String(hr).padStart(2,"0")+":00</div>";h+="<div class=\"cal-hour-line\"></div>";var evts=items.filter(function(c){var t=(c.start||"00:00").split(":");return parseInt(t[0])===hr;});evts.forEach(function(c,idx){var startMin=c.start?parseInt(c.start.split(":")[0])*60+parseInt(c.start.split(":")[1]):0;var endMin=c.end?parseInt(c.end.split(":")[0])*60+parseInt(c.end.split(":")[1]):startMin+60;var durationH=Math.max((endMin-startMin)/60,0.5);var topOffset=((startMin%60)/60)*dayHourHeight();var evtH=durationH*dayHourHeight();var ci=colors[idx%colors.length];var timeStr=c.start+(c.end?"-"+c.end:"");h+="<div class=\"cal-event\""+NOTE_ATTR(c.notes)+" style=\"top:"+topOffset+"px;left:"+(idx*120+4)+"px;width:"+(idx>0?116:228)+"px;height:"+evtH+"px;background:"+ci+"\" onclick=\"showCalDetail('"+c.id+"')\"><div style=\"font-weight:600;font-size:12px\">"+ESC(c.title)+"</div>"+(timeStr?"<div style=\"font-size:11px;opacity:0.8\">"+timeStr+"</div>":"")+(c.notes?"<div class=\"cal-event-note\">"+ESC(TRUNC_TEXT(c.notes,28))+"</div>":"")+"</div>";});h+="</div>";}if(ds===TD())h+="<div class=\"cal-now\" style=\"top:0\"><span class=\"cal-now-time\">"+nowTimeText()+"</span></div>";tl.innerHTML=h;updateCalNowLine();ensureDayNowTicker();}
+function setCalView(mode){calViewMode=mode;if(mode!=="month")MONTH_DRAWER_DATE="";document.getElementById("cal-btn-month").classList.toggle("active",mode==="month");document.getElementById("cal-btn-week").classList.toggle("active",mode==="week");document.getElementById("cal-btn-day").classList.toggle("active",mode==="day");document.getElementById("cal-month-view").classList.toggle("active",mode==="month");document.getElementById("cal-week-view").classList.toggle("active",mode==="week");document.getElementById("cal-day-view").classList.toggle("active",mode==="day");document.getElementById("cal-right-body").classList.toggle("month-mode",mode==="month");renderCalendarCurrentView();if(mode==="day")scrollDayViewToNow();}
 function renderCalList(){var el=document.getElementById("cal-list");var mini=document.getElementById("cal-list-mini");var items=getCalItems().sort(function(a,b){return(a.date+(a.start||"99:99")).localeCompare(b.date+(b.start||"99:99"));});calItems=items;if(el){var today=TD(),up=items.filter(function(c){return c.date>=today;}).slice(0,30);if(up.length===0){el.innerHTML="<div style='text-align:center;color:var(--slate-400);padding:30px 0'>暂无日程</div>";}else{el.innerHTML=up.map(function(c){var isT=c.date===today;return "<div style='display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:8px;margin-bottom:8px;background:"+(isT?"var(--blue-50)":"var(--slate-50)")+"'><div style='min-width:48px;text-align:center'><div style='font-size:20px;font-weight:700;color:"+(isT?"var(--blue-500)":"var(--slate-700)")+"'>"+parseInt(c.date.slice(8))+"</div><div style='font-size:11px;color:var(--slate-400)'>"+parseInt(c.date.slice(5,7))+"月</div></div><div style='flex:1;min-width:0'><div style='font-weight:600;font-size:14px'>"+ESC(c.title)+(c.start?" <span style='color:var(--blue-500);font-weight:400;font-size:13px'>"+c.start+(c.end?"-"+c.end:"")+"</span>":"")+"</div>"+(c.notes?"<div class='cal-note-preview'"+NOTE_ATTR(c.notes)+">"+ESC(TRUNC_TEXT(c.notes,42))+"</div>":"")+"</div><button onclick=\"showCalDetail('"+c.id+"')\" style='background:none;border:none;cursor:pointer;color:var(--rose-400);font-size:14px' title='查看详情'>✕</button></div>";}).join("");}}if(mini){var today2=TD(),todayItems=items.filter(function(c){return c.date===today2;});if(todayItems.length===0){mini.innerHTML="<div style='text-align:center;color:var(--slate-400);padding:16px 0;font-size:13px'>今日暂无日程</div>";}else{mini.innerHTML=todayItems.map(function(c){return "<div style='display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--slate-100);cursor:pointer' onclick='openCalendarOverview(\"day\")'><div style='font-size:13px;font-weight:600;color:var(--blue-500);min-width:50px'>"+(c.start||"--:--")+"</div><div style='flex:1;min-width:0;font-size:13px'><div>"+ESC(c.title)+"</div>"+(c.notes?"<div class='cal-note-preview'"+NOTE_ATTR(c.notes)+">"+ESC(TRUNC_TEXT(c.notes,26))+"</div>":"")+"</div></div>";}).join("");}}}
 function updateCalStats(){var items=getCalItems(),today=dateFromStr(TD()),weekStart=startOfWeekDate(today),weekEnd=endOfWeekDate(today),monthEnd=endOfMonthDate(today);document.getElementById("d-cal-today").textContent=items.filter(function(c){return c.date===TD();}).length;document.getElementById("d-cal-week").textContent=items.filter(function(c){return c.date&&inRange(c.date,weekStart,weekEnd);}).length;document.getElementById("d-cal-month").textContent=items.filter(function(c){return c.date&&dateFromStr(c.date).getFullYear()===today.getFullYear()&&dateFromStr(c.date).getMonth()===today.getMonth();}).length;document.getElementById("d-cal-week-upcoming").textContent="待进行 "+upcomingCount(items,today,weekEnd);document.getElementById("d-cal-month-upcoming").textContent="待进行 "+upcomingCount(items,today,monthEnd);}
 function renderDashboard(){var a=tasks,ac=a.filter(function(t){return t.status==="active";}),n=new Date();var o=ac.filter(function(t){return new Date(t.deadline+"T23:59:59")<n;}).length,td=ac.filter(function(t){return t.deadline===TD();}).length,dm=a.filter(function(t){return t.status==="completed"&&t.completedAt&&IM(t.completedAt.slice(0,10));}).length;document.getElementById("d-overdue").textContent=o;document.getElementById("d-today").textContent=td;document.getElementById("d-done").textContent=dm;document.getElementById("user-name-display").textContent=getSetting("name","小可爱");fetchWeather();if(!_ir&&!_ub)updateBlessing();_ub=1;updateCalStats();renderCalList();var tt=ac.filter(function(t){return t.deadline===TD();});var c=document.getElementById("today-mini-list");if(tt.length===0){c.innerHTML="<h3>今日待办</h3><div class=\"today-empty\">暂无今日待办任务</div>";}else{c.innerHTML="<h3>今日待办("+tt.length+")</h3>"+tt.map(function(t){return"<div class=\"today-item\" onclick=\"switchTo('tasks')\"><div class=\"td-dot\" style=\"background:"+(URG(t)==="critical"?"var(--rose-500)":"var(--emerald-500)")+"\"></div><span class=\"td-title\">"+ESC(t.title)+"</span></div>";}).join("");}}
 function refreshCalendarSurfaces(){updateCalStats();renderCalList();renderCalGrid();renderCalendarCurrentView();}
-async function saveCalendar(){var t=document.getElementById("cal-title").value.trim(),d=document.getElementById("cal-date").value,ts=document.getElementById("cal-start").value,te=document.getElementById("cal-end").value,n=document.getElementById("cal-notes").value.trim();if(!t||!d){T("请填写日程标题和日期","w");return;}if(ts&&te&&ts>=te){T("结束时间需晚于开始时间","w");return;}var items=getCalItems();items.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),title:t,date:d,start:ts||"",end:te||"",notes:n,createdAt:new Date().toISOString()});saveCalItems(items);document.getElementById("cal-title").value="";document.getElementById("cal-date").value="";document.getElementById("cal-start").value="09:00";document.getElementById("cal-end").value="10:00";document.getElementById("cal-notes").value="";T("日程已添加","s");refreshCalendarSurfaces();}
+async function saveCalendar(){var t=document.getElementById("cal-title").value.trim(),d=document.getElementById("cal-date").value,ts=document.getElementById("cal-start").value,te=document.getElementById("cal-end").value,n=document.getElementById("cal-notes").value.trim();if(!t||!d){T("请填写日程标题和日期","w");return;}if(ts&&te&&ts>=te){T("结束时间需晚于开始时间","w");return;}var items=getCalItems();items.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),title:t,date:d,start:ts||"",end:te||"",notes:n,source:"local",creator:getSetting("name","我"),createdAt:new Date().toISOString()});saveCalItems(items);document.getElementById("cal-title").value="";document.getElementById("cal-date").value="";document.getElementById("cal-start").value="09:00";document.getElementById("cal-end").value="10:00";document.getElementById("cal-notes").value="";T("日程已添加","s");refreshCalendarSurfaces();}
 function cSave(){var id=cid;if(!id)return;var t=document.getElementById("cmET").value.trim(),d=document.getElementById("cmED").value,s=document.getElementById("cmES").value,e=document.getElementById("cmEE").value,n=document.getElementById("cmEN").value.trim();if(!t||!d){alert("标题和日期不能为空");return;}if(s&&e&&s>=e){alert("结束时间需晚于开始时间");return;}var items=getCalItems();for(var i=0;i<items.length;i++){if(items[i].id===id){items[i].title=t;items[i].date=d;items[i].start=s||"";items[i].end=e||"";items[i].notes=n;break;}}saveCalItems(items);alert("已保存");cClose();refreshCalendarSurfaces();}
-async function delCal(id){var items=getCalItems().filter(function(c){return c.id!==id;});saveCalItems(items);T("日程已删除","i");refreshCalendarSurfaces();}
+async function delCal(id){var items=getCalItems();var target=items.find(function(c){return c.id===id;});if(!target)return false;if(target.source==="dingtalk"){try{await deleteDingtalkCalendarEvent(target);}catch(e){T("钉钉端删除失败："+(e&&e.message?e.message:e),"w");return false;}}items=items.filter(function(c){return c.id!==id;});saveCalItems(items);T(target.source==="dingtalk"?"钉钉日程已删除":"日程已删除","i");refreshCalendarSurfaces();return true;}
 async function loadLLMSettings(){await ensureStateLoaded();var v=LS("llm_vendor")||"",k=LS("llm_key")||"",u=LS("llm_url")||"",m=LS("llm_model")||"";document.getElementById("llm-vendor").value=v;document.getElementById("llm-key").value=k;document.getElementById("llm-url").value=u;document.getElementById("llm-model").value=m;}
 async function saveLLMSettings(){await ensureStateLoaded();LS("llm_vendor",document.getElementById("llm-vendor").value.trim());LS("llm_key",document.getElementById("llm-key").value.trim());LS("llm_url",document.getElementById("llm-url").value.trim());LS("llm_model",document.getElementById("llm-model").value.trim());await saveServerStateNow();var el=document.getElementById("llm-status");el.textContent="\u2705 \u5df2\u4fdd\u5b58\u5230\u672c\u5730\u6587\u4ef6";setTimeout(function(){el.textContent="";},2400);}
-async function saveSettings(){await ensureStateLoaded();var name=document.getElementById("settings-name").value.trim();if(name)LS("name",name);await saveServerStateNow();var el=document.getElementById("settings-status");el.textContent="\u2705 \u5df2\u4fdd\u5b58\u5230\u672c\u5730\u6587\u4ef6";setTimeout(function(){el.textContent="";},2400);if(CM==="dashboard")renderDashboard();}
-async function loadSettings(){await ensureStateLoaded();var n=LS("name")||"";document.getElementById("settings-name").value=n;autoDetectCity();await loadLLMSettings();}
+async function saveSettings(){await ensureStateLoaded();var name=document.getElementById("settings-name").value.trim();if(name)LS("name",name);var syncInput=document.getElementById("dingtalk-sync-interval");if(syncInput){var minutes=parseInt(syncInput.value,10);if(!isFinite(minutes)||minutes<1)minutes=15;if(minutes>1440)minutes=1440;syncInput.value=minutes;LS("dingtalk_sync_interval",minutes);scheduleDingtalkAutoSync();}await saveServerStateNow();var el=document.getElementById("settings-status");el.textContent="\u2705 \u5df2\u4fdd\u5b58\u5230\u672c\u5730\u6587\u4ef6";setTimeout(function(){el.textContent="";},2400);if(CM==="dashboard")renderDashboard();}
+async function loadSettings(){await ensureStateLoaded();var n=LS("name")||"";document.getElementById("settings-name").value=n;var syncInput=document.getElementById("dingtalk-sync-interval");if(syncInput)syncInput.value=getDingtalkSyncIntervalMinutes();autoDetectCity();await loadLLMSettings();}
+document.addEventListener("DOMContentLoaded",function(){setTimeout(startAutoDingtalkSync,1800);});
 </script>
                                                                                                                         </body>
                                                                                                                         </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

@@ -169,6 +169,37 @@ function Invoke-DwsCalendarList {
     return @{ ExitCode = $process.ExitCode; Body = $body }
 }
 
+function Invoke-DwsCalendarDelete {
+    param([string] $EventId)
+
+    if ([string]::IsNullOrWhiteSpace($EventId)) {
+        throw "Missing DingTalk calendar eventId."
+    }
+    if (-not [System.IO.File]::Exists($dwsPath)) {
+        throw "Cannot find dws.exe. Expected at $localBin\dws.exe."
+    }
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $dwsPath
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $args = @("calendar", "event", "delete", "--id", $EventId, "--format", "json", "-y")
+    $startInfo.Arguments = ($args | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join " "
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    $body = if ($stdout.Trim()) { $stdout } else { $stderr }
+    return @{ ExitCode = $process.ExitCode; Body = $body; Error = $stderr }
+}
+
 function Start-DwsLogin {
     if (-not [System.IO.File]::Exists($dwsPath)) {
         throw "Cannot find dws.exe. Expected at $localBin\dws.exe."
@@ -262,6 +293,31 @@ while ($true) {
                 Write-ServerLog "state save exception: $($_.Exception.GetType().FullName) $($_.Exception.Message)"
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/delete-calendar-event" -and $method -eq "POST") {
+            try {
+                $payload = if ([string]::IsNullOrWhiteSpace($bodyText)) { $null } else { $bodyText | ConvertFrom-Json }
+                $eventId = ""
+                if ($payload -and $payload.eventId) { $eventId = [string]$payload.eventId }
+                if ([string]::IsNullOrWhiteSpace($eventId)) { throw "Missing DingTalk calendar eventId." }
+
+                $dwsResult = Invoke-DwsCalendarDelete $eventId
+                $body = if ($dwsResult.Body) { [string]$dwsResult.Body } else { "" }
+                if ($dwsResult.ExitCode -ne 0 -or $body -match '"error"\s*:') {
+                    Write-ServerLog "delete-calendar-event dws exit=$($dwsResult.ExitCode) body=$body"
+                    $message = @{ success = $false; error = $body; exitCode = $dwsResult.ExitCode } | ConvertTo-Json -Compress
+                    Send-HttpResponse $client 502 "Bad Gateway" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+                } else {
+                    $message = @{ success = $true; eventId = $eventId; result = $body } | ConvertTo-Json -Compress
+                    Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+                }
+            } catch {
+                Write-ServerLog "delete-calendar-event exception: $($_.Exception.GetType().FullName) $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 400 "Bad Request" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
             continue
         }
