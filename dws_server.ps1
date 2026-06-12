@@ -461,8 +461,27 @@ while ($true) {
                     }
                 }
 
+                $jobNumber = ""
+                $dirName = ""
+                if ($user -and $user.userId) {
+                    $detailRes = Invoke-DwsJson @("contact", "user", "get", "--ids", [string]$user.userId, "--format", "json")
+                    if ($detailRes.ExitCode -eq 0 -and $detailRes.Body) {
+                        try {
+                            $detail = $detailRes.Body | ConvertFrom-Json
+                            if ($detail.result -and @($detail.result).Count -gt 0) {
+                                $model = @($detail.result)[0].orgEmployeeModel
+                                if ($model) {
+                                    $jobNumber = [string]$model.jobNumber
+                                    $dirName = [string]$model.orgUserName
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+
                 $payload = if ($user) {
-                    @{ success = $true; user = @{ name = [string]$user.name; userId = [string]$user.userId; openDingTalkId = [string]$user.openDingTalkId } }
+                    $finalName = if ($dirName) { $dirName } else { [string]$user.name }
+                    @{ success = $true; user = @{ name = $finalName; userId = [string]$user.userId; jobNumber = $jobNumber; openDingTalkId = [string]$user.openDingTalkId } }
                 } else {
                     @{ success = $true; user = $null }
                 }
