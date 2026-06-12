@@ -208,6 +208,122 @@ function Start-DwsLogin {
     Start-Process -FilePath $dwsPath -ArgumentList @("auth", "login") -WindowStyle Hidden
 }
 
+function Invoke-DwsJson {
+    param([string[]] $DwsArgs)
+
+    if (-not [System.IO.File]::Exists($dwsPath)) {
+        throw "Cannot find dws.exe. Expected at $localBin\dws.exe."
+    }
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $dwsPath
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $startInfo.Arguments = ($DwsArgs | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join " "
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    $body = if ($stdout.Trim()) { $stdout } else { $stderr }
+    return @{ ExitCode = $process.ExitCode; Body = $body }
+}
+
+$script:dwsSelfInfo = $null
+function Get-DwsSelfInfo {
+    if ($script:dwsSelfInfo) { return $script:dwsSelfInfo }
+    try {
+        $res = Invoke-DwsJson @("contact", "user", "get-self", "--format", "json")
+        if ($res.ExitCode -eq 0 -and $res.Body) {
+            $parsed = $res.Body | ConvertFrom-Json
+            $model = $null
+            if ($parsed.result -and $parsed.result.Count -gt 0) { $model = $parsed.result[0].orgEmployeeModel }
+            if ($model) {
+                $script:dwsSelfInfo = @{ name = [string]$model.orgUserName; userId = [string]$model.userId }
+                return $script:dwsSelfInfo
+            }
+        }
+    } catch {
+        Write-ServerLog "get-self exception: $($_.Exception.Message)"
+    }
+    return @{ name = ""; userId = "" }
+}
+
+function Get-QueryValue {
+    param([string] $RequestPath, [string] $Key)
+
+    $m = [regex]::Match($RequestPath, [regex]::Escape($Key) + "=([^&]*)")
+    if (-not $m.Success) { return "" }
+    return [Uri]::UnescapeDataString($m.Groups[1].Value.Replace("+", " "))
+}
+
+function Invoke-DwsMessageSync {
+    param([string] $StartTime, [string] $EndTime)
+
+    $convMap = [ordered]@{}
+    $cursor = "0"
+    $pages = 0
+    $hasMore = $false
+
+    while ($pages -lt 8) {
+        $res = Invoke-DwsJson @("chat", "message", "list-all", "--start", $StartTime, "--end", $EndTime, "--limit", "50", "--cursor", $cursor, "--format", "json")
+        if ($res.ExitCode -ne 0) {
+            throw "dws chat message list-all failed (exit=$($res.ExitCode)): $($res.Body)"
+        }
+        $parsed = $res.Body | ConvertFrom-Json
+        $result = if ($parsed.result) { $parsed.result } else { $parsed }
+        $list = @()
+        if ($result.conversationMessagesList) { $list = @($result.conversationMessagesList) }
+
+        foreach ($conv in $list) {
+            $cid = [string]$conv.openConversationId
+            if (-not $convMap.Contains($cid)) {
+                $convMap[$cid] = @{
+                    openConversationId = $cid
+                    title = [string]$conv.title
+                    singleChat = [bool]$conv.singleChat
+                    messages = [System.Collections.ArrayList]::new()
+                }
+            }
+            foreach ($msg in @($conv.messages)) {
+                [void]$convMap[$cid].messages.Add(@{
+                    content = [string]$msg.content
+                    createTime = [string]$msg.createTime
+                    sender = [string]$msg.sender
+                    senderOpenDingTalkId = [string]$msg.senderOpenDingTalkId
+                    openMessageId = [string]$msg.openMessageId
+                })
+            }
+        }
+
+        $pages++
+        $hasMore = [bool]$result.hasMore
+        $cursor = [string]$result.nextCursor
+        if (-not $hasMore -or [string]::IsNullOrWhiteSpace($cursor)) { break }
+    }
+
+    $conversations = @()
+    foreach ($key in $convMap.Keys) {
+        $entry = $convMap[$key]
+        $entry.messages = @($entry.messages)
+        $conversations += $entry
+    }
+
+    return @{
+        success = $true
+        self = (Get-DwsSelfInfo)
+        conversations = $conversations
+        pages = $pages
+        hasMore = $hasMore
+    }
+}
+
 $server = New-BoardListener
 $listener = $server.Listener
 $port = $server.Port
@@ -318,6 +434,27 @@ while ($true) {
                 Write-ServerLog "delete-calendar-event exception: $($_.Exception.GetType().FullName) $($_.Exception.Message)"
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 400 "Bad Request" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/sync-messages*") {
+            try {
+                $startTime = Get-QueryValue $requestPath "start"
+                $endTime = Get-QueryValue $requestPath "end"
+                if ([string]::IsNullOrWhiteSpace($startTime)) { $startTime = (Get-Date).ToString("yyyy-MM-dd") + " 00:00:00" }
+                if ([string]::IsNullOrWhiteSpace($endTime)) { $endTime = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
+
+                $payload = Invoke-DwsMessageSync $startTime $endTime
+                $json = $payload | ConvertTo-Json -Depth 8 -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($json))
+            } catch {
+                $errText = $_.Exception.Message
+                $statusCode = if ($errText -match 'not_authenticated|未登录|auth login') { 401 } else { 502 }
+                $statusText = if ($statusCode -eq 401) { "Unauthorized" } else { "Bad Gateway" }
+                Write-ServerLog "sync-messages exception: $errText"
+                $message = @{ success = $false; error = $errText } | ConvertTo-Json -Compress
+                Send-HttpResponse $client $statusCode $statusText "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
             continue
         }
