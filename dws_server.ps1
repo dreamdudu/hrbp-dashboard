@@ -438,6 +438,44 @@ while ($true) {
             continue
         }
 
+        if ($requestPath -like "/contact-lookup*") {
+            try {
+                $name = Get-QueryValue $requestPath "name"
+                if ([string]::IsNullOrWhiteSpace($name)) { throw "Missing name parameter." }
+
+                $user = $null
+                $res = Invoke-DwsJson @("contact", "user", "search", "--query", $name, "--format", "json")
+                if ($res.ExitCode -eq 0 -and $res.Body) {
+                    $parsed = $res.Body | ConvertFrom-Json
+                    if ($parsed.result -and @($parsed.result).Count -gt 0) { $user = @($parsed.result)[0] }
+                }
+                if (-not $user) {
+                    $cnPattern = "[" + [char]0x4E00 + "-" + [char]0x9FA5 + "]{2,}"
+                    $cn = [regex]::Match($name, $cnPattern)
+                    if ($cn.Success -and $cn.Value -ne $name) {
+                        $res2 = Invoke-DwsJson @("contact", "user", "search", "--query", $cn.Value, "--format", "json")
+                        if ($res2.ExitCode -eq 0 -and $res2.Body) {
+                            $parsed2 = $res2.Body | ConvertFrom-Json
+                            if ($parsed2.result -and @($parsed2.result).Count -gt 0) { $user = @($parsed2.result)[0] }
+                        }
+                    }
+                }
+
+                $payload = if ($user) {
+                    @{ success = $true; user = @{ name = [string]$user.name; userId = [string]$user.userId; openDingTalkId = [string]$user.openDingTalkId } }
+                } else {
+                    @{ success = $true; user = $null }
+                }
+                $json = $payload | ConvertTo-Json -Depth 4 -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($json))
+            } catch {
+                Write-ServerLog "contact-lookup exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 502 "Bad Gateway" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
         if ($requestPath -like "/sync-messages*") {
             try {
                 $startTime = Get-QueryValue $requestPath "start"
