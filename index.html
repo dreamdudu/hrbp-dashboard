@@ -3325,7 +3325,7 @@ color:#ffb3b8
 </div>
 <div class="module" id="m-settings">
                 <div style="max-width:500px">
-                <h3 style="font-size:16px;font-weight:600;margin-bottom:20px">个人设置</h3>
+                <h3 style="font-size:16px;font-weight:600;margin-bottom:20px">个人基本信息设置</h3>
                     <div class="fg">
                         <label>您的姓名
                         </label>
@@ -3333,22 +3333,11 @@ color:#ffb3b8
                         <p style="font-size:12px;color:var(--slate-400);margin-top:4px">将显示在工作概览页面的欢迎词中
                         </p>
                     </div>
-                    <div class="fg">
-                        <label>钉钉日程自动同步间隔（分钟）
-                        </label>
-                        <input type="number" id="dingtalk-sync-interval" min="1" max="1440" step="1" placeholder="例如：15" style="font-size:15px">
-                        <p style="font-size:12px;color:var(--slate-400);margin-top:4px">打开页面会先静默同步一次，之后按该间隔自动扫描并更新日程
-                        </p>
-                    </div>
-                    
+
                     <button class="btn-go" onclick="saveSettings()" style="margin-top:8px">保存设置
                     </button>
                     <div style="margin-top:16px">
                         <span id="settings-status" style="font-size:13px;color:var(--slate-400)">
-                        </span>
-                    </div>
-                    <div style="margin-top:8px">
-                        <span id="dingtalk-sync-status" style="font-size:13px;color:var(--slate-400)">
                         </span>
                     </div>
 
@@ -3378,6 +3367,27 @@ color:#ffb3b8
                     <div style="display:flex;gap:8px;margin-top:8px"><button class="btn-xx" onclick="testLLMConnection()" style="flex:1">测试连接</button><button class="btn-go" onclick="saveLLMSettings()" style="flex:1">保存大模型设置</button></div>
                     <div style="margin-top:16px">
                         <span id="llm-status" style="font-size:13px;color:var(--slate-400)"></span>
+                    </div>
+                </div>
+
+                <div style="max-width:500px;margin-top:28px">
+                <h3 style="font-size:16px;font-weight:600;margin-bottom:20px">同步设置</h3>
+                    <div class="fg">
+                        <label>钉钉日程自动同步间隔（分钟）
+                        </label>
+                        <input type="number" id="dingtalk-sync-interval" min="1" max="1440" step="1" placeholder="例如：15" style="font-size:15px">
+                        <p style="font-size:12px;color:var(--slate-400);margin-top:4px">打开页面会先静默同步一次，之后按该间隔自动扫描并更新日程
+                        </p>
+                    </div>
+                    <button class="btn-go" onclick="saveSyncSettings()" style="margin-top:8px">保存同步设置
+                    </button>
+                    <div style="margin-top:16px">
+                        <span id="sync-settings-status" style="font-size:13px;color:var(--slate-400)">
+                        </span>
+                    </div>
+                    <div style="margin-top:8px">
+                        <span id="dingtalk-sync-status" style="font-size:13px;color:var(--slate-400)">
+                        </span>
                     </div>
                 </div>
                 </div>
@@ -3947,7 +3957,8 @@ function cSave(){var id=cid;if(!id)return;var t=document.getElementById("cmET").
 async function delCal(id){var items=getCalItems();var target=items.find(function(c){return c.id===id;});if(!target)return false;if(target.source==="dingtalk"){try{await deleteDingtalkCalendarEvent(target);}catch(e){T("钉钉端删除失败："+(e&&e.message?e.message:e),"w");return false;}}items=items.filter(function(c){return c.id!==id;});saveCalItems(items);T(target.source==="dingtalk"?"钉钉日程已删除":"日程已删除","i");refreshCalendarSurfaces();return true;}
 async function loadLLMSettings(){await ensureStateLoaded();var v=LS("llm_vendor")||"",k=LS("llm_key")||"",u=LS("llm_url")||"",m=LS("llm_model")||"";document.getElementById("llm-vendor").value=v;document.getElementById("llm-key").value=k;document.getElementById("llm-url").value=u;document.getElementById("llm-model").value=m;}
 async function saveLLMSettings(){await ensureStateLoaded();LS("llm_vendor",document.getElementById("llm-vendor").value.trim());LS("llm_key",document.getElementById("llm-key").value.trim());LS("llm_url",document.getElementById("llm-url").value.trim());LS("llm_model",document.getElementById("llm-model").value.trim());await saveServerStateNow();var el=document.getElementById("llm-status");el.textContent="\u2705 \u5df2\u4fdd\u5b58\u5230\u672c\u5730\u6587\u4ef6";setTimeout(function(){el.textContent="";},2400);}
-async function saveSettings(){await ensureStateLoaded();var name=document.getElementById("settings-name").value.trim();if(name)LS("name",name);var syncInput=document.getElementById("dingtalk-sync-interval");if(syncInput){var minutes=parseInt(syncInput.value,10);if(!isFinite(minutes)||minutes<1)minutes=15;if(minutes>1440)minutes=1440;syncInput.value=minutes;LS("dingtalk_sync_interval",minutes);scheduleDingtalkAutoSync();}await saveServerStateNow();var el=document.getElementById("settings-status");el.textContent="\u2705 \u5df2\u4fdd\u5b58\u5230\u672c\u5730\u6587\u4ef6";setTimeout(function(){el.textContent="";},2400);if(CM==="dashboard")renderDashboard();}
+async function saveSettings(){await ensureStateLoaded();var name=document.getElementById("settings-name").value.trim();if(name)LS("name",name);await saveServerStateNow();var el=document.getElementById("settings-status");el.textContent="\u2705 \u5df2\u4fdd\u5b58\u5230\u672c\u5730\u6587\u4ef6";setTimeout(function(){el.textContent="";},2400);if(CM==="dashboard")renderDashboard();}
+async function saveSyncSettings(){await ensureStateLoaded();var syncInput=document.getElementById("dingtalk-sync-interval");if(syncInput){var minutes=parseInt(syncInput.value,10);if(!isFinite(minutes)||minutes<1)minutes=15;if(minutes>1440)minutes=1440;syncInput.value=minutes;LS("dingtalk_sync_interval",minutes);scheduleDingtalkAutoSync();}await saveServerStateNow();var el=document.getElementById("sync-settings-status");el.textContent="\u2705 \u5df2\u4fdd\u5b58\u5230\u672c\u5730\u6587\u4ef6";setTimeout(function(){el.textContent="";},2400);}
 async function loadSettings(){await ensureStateLoaded();var n=LS("name")||"";document.getElementById("settings-name").value=n;var syncInput=document.getElementById("dingtalk-sync-interval");if(syncInput)syncInput.value=getDingtalkSyncIntervalMinutes();autoDetectCity();await loadLLMSettings();}
 document.addEventListener("DOMContentLoaded",function(){setTimeout(startAutoDingtalkSync,1800);});
 </script>
