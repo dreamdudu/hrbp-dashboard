@@ -205,7 +205,28 @@ function Start-DwsLogin {
         throw "Cannot find dws.exe. Expected at $localBin\dws.exe."
     }
 
-    Start-Process -FilePath $dwsPath -ArgumentList @("auth", "login") -WindowStyle Hidden
+    $cmdLine = '"' + $dwsPath + '" auth login --force & echo. & echo ============================================== & echo  If the browser did not open automatically, & echo  copy the URL above into your browser to login. & echo  After login, close this window and refresh the board. & echo ============================================== & pause'
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $cmdLine -WindowStyle Normal
+}
+
+function Get-SafeFileName {
+    param([string] $Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return "file" }
+    $invalid = [System.IO.Path]::GetInvalidFileNameChars()
+    $sb = $Name
+    foreach ($c in $invalid) { $sb = $sb.Replace([string]$c, "_") }
+    $sb = $sb.Trim().TrimStart(".")
+    if ([string]::IsNullOrWhiteSpace($sb)) { return "file" }
+    if ($sb.Length -gt 120) { $sb = $sb.Substring(0, 120) }
+    return $sb
+}
+
+function Get-TaskAttachmentDir {
+    param([string] $TaskId)
+    $safeId = Get-SafeFileName $TaskId
+    $dir = Join-Path (Join-Path $dataDir "attachments") $safeId
+    if (-not [System.IO.Directory]::Exists($dir)) { [void][System.IO.Directory]::CreateDirectory($dir) }
+    return @{ Dir = $dir; SafeId = $safeId }
 }
 
 function Invoke-DwsJson {
@@ -337,7 +358,7 @@ while ($true) {
     $client = $null
     try {
         $client = $listener.AcceptTcpClient()
-        $client.ReceiveTimeout = 5000
+        $client.ReceiveTimeout = 60000
         $stream = $client.GetStream()
         $reader = [System.IO.StreamReader]::new($stream, [Text.Encoding]::UTF8, $false, 8192, $true)
         $requestLine = $reader.ReadLine()
@@ -382,6 +403,22 @@ while ($true) {
                 Write-ServerLog "auth-login exception: $($_.Exception.GetType().FullName) $($_.Exception.Message)"
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/auth-status") {
+            try {
+                $res = Invoke-DwsJson @("contact", "user", "get-self", "--format", "json")
+                $body = if ($res.Body) { [string]$res.Body } else { "" }
+                $authed = $true
+                if ($res.ExitCode -ne 0 -or $body -match 'not_authenticated') { $authed = $false }
+                $message = @{ success = $true; authenticated = $authed } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                Write-ServerLog "auth-status exception: $($_.Exception.Message)"
+                $message = @{ success = $false; authenticated = $true; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
             continue
         }
@@ -434,6 +471,55 @@ while ($true) {
                 Write-ServerLog "delete-calendar-event exception: $($_.Exception.GetType().FullName) $($_.Exception.Message)"
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 400 "Bad Request" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/upload-attachment" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $taskId = [string]$payload.taskId
+                $name = [string]$payload.name
+                $b64 = [string]$payload.dataBase64
+                if ([string]::IsNullOrWhiteSpace($taskId) -or [string]::IsNullOrWhiteSpace($name)) { throw "Missing taskId or name." }
+
+                $info = Get-TaskAttachmentDir $taskId
+                $safe = Get-SafeFileName $name
+                $target = Join-Path $info.Dir $safe
+                $baseName = [System.IO.Path]::GetFileNameWithoutExtension($safe)
+                $ext = [System.IO.Path]::GetExtension($safe)
+                $i = 1
+                while ([System.IO.File]::Exists($target)) {
+                    $safe = "$baseName($i)$ext"
+                    $target = Join-Path $info.Dir $safe
+                    $i++
+                }
+                $bytes = [Convert]::FromBase64String($b64)
+                [System.IO.File]::WriteAllBytes($target, $bytes)
+
+                $rel = "data/attachments/" + $info.SafeId + "/" + $safe
+                $message = @{ success = $true; path = $rel; name = $safe; size = $bytes.Length } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                Write-ServerLog "upload-attachment exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/open-folder*") {
+            try {
+                $taskId = Get-QueryValue $requestPath "task"
+                if ([string]::IsNullOrWhiteSpace($taskId)) { throw "Missing task parameter." }
+                $info = Get-TaskAttachmentDir $taskId
+                Start-Process explorer.exe $info.Dir
+                $message = @{ success = $true; dir = $info.Dir } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                Write-ServerLog "open-folder exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
             continue
         }
