@@ -1,4 +1,4 @@
-$localBin = Join-Path $env:USERPROFILE ".local\bin"
+﻿$localBin = Join-Path $env:USERPROFILE ".local\bin"
 $env:PATH = $localBin + ";" + [Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [Environment]::GetEnvironmentVariable("PATH", "Machine")
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
@@ -9,14 +9,21 @@ $md5 = [System.Security.Cryptography.MD5]::Create()
 $dirBytes = [System.Text.Encoding]::UTF8.GetBytes($scriptDir.ToLowerInvariant())
 $dirHash = ([System.BitConverter]::ToString($md5.ComputeHash($dirBytes))).Replace('-', '')
 $mutexName = "Global\HRBP_DWS_Server_" + $dirHash
+# 用 WaitOne(0) 判定“所有权”而非对象是否存在：只有真正持有锁的进程才是运行中的服务，
+# 避免被挡下的实例仅打开句柄就让后续实例误判为“已有服务”而无人启动
 $createdNew = $false
-$script:SingletonMutex = New-Object System.Threading.Mutex($true, $mutexName, [ref]$createdNew)
-if (-not $createdNew) {
+$mutex = New-Object System.Threading.Mutex($false, $mutexName, [ref]$createdNew)
+$acquired = $false
+try { $acquired = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $acquired = $true }
+if (-not $acquired) {
+    # 另一个实例正持有锁（真正在运行的服务）：立即退出，不重复占用端口
     try {
         Add-Content -Path $logPath -Encoding utf8 -Value "$((Get-Date).ToString("s")) another server instance is already running, exiting pid=$PID"
     } catch {}
     exit 0
 }
+# 本进程已取得锁的所有权，持有引用直到进程退出
+$script:SingletonMutex = $mutex
 $dataDir = Join-Path $scriptDir "data"
 $backupDir = Join-Path $dataDir "backups"
 $statePath = Join-Path $dataDir "dashboard-state.json"
