@@ -411,9 +411,10 @@ while ($true) {
             try {
                 $res = Invoke-DwsJson @("contact", "user", "get-self", "--format", "json")
                 $body = if ($res.Body) { [string]$res.Body } else { "" }
-                $authed = $true
-                if ($res.ExitCode -ne 0 -or $body -match 'not_authenticated') { $authed = $false }
-                $message = @{ success = $true; authenticated = $authed } | ConvertTo-Json -Compress
+                $authed = $true; $network = $false
+                if ($body -match 'not_authenticated') { $authed = $false }
+                elseif ($res.ExitCode -ne 0) { $authed = $false; $network = $true }
+                $message = @{ success = $true; authenticated = $authed; network = $network } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             } catch {
                 Write-ServerLog "auth-status exception: $($_.Exception.Message)"
