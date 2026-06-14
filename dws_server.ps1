@@ -3,6 +3,20 @@ $env:PATH = $localBin + ";" + [Environment]::GetEnvironmentVariable("PATH", "Use
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 $logPath = Join-Path $scriptDir "dws_server.log"
+
+# 单实例互斥锁：同一看板目录只允许一个服务进程，避免重复启动后端口不断变化
+$md5 = [System.Security.Cryptography.MD5]::Create()
+$dirBytes = [System.Text.Encoding]::UTF8.GetBytes($scriptDir.ToLowerInvariant())
+$dirHash = ([System.BitConverter]::ToString($md5.ComputeHash($dirBytes))).Replace('-', '')
+$mutexName = "Global\HRBP_DWS_Server_" + $dirHash
+$createdNew = $false
+$script:SingletonMutex = New-Object System.Threading.Mutex($true, $mutexName, [ref]$createdNew)
+if (-not $createdNew) {
+    try {
+        Add-Content -Path $logPath -Encoding utf8 -Value "$((Get-Date).ToString("s")) another server instance is already running, exiting pid=$PID"
+    } catch {}
+    exit 0
+}
 $dataDir = Join-Path $scriptDir "data"
 $backupDir = Join-Path $dataDir "backups"
 $statePath = Join-Path $dataDir "dashboard-state.json"

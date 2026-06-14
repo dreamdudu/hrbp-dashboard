@@ -4330,6 +4330,24 @@ function syncFromDingtalk(options){
       if(silent){resetSyncButton(btn);throw e;}
       T(netMsg,"w");resetSyncButton(btn);return;
     }
+    // 仅当确实连不上本地服务（fetch 网络错误）时才尝试启动后端，
+    // 避免钉钉侧错误也被当成“服务没启动”而反复拉起新进程导致端口不断变化
+    var localDown=(e instanceof TypeError)||/Failed to fetch|NetworkError|Load failed|加载失败/i.test(syncErrorMessage(e));
+    if(!localDown){
+      if(!silent)T(syncErrorMessage(e),"w");
+      else setSyncStatus("钉钉日程自动同步失败："+syncErrorMessage(e),true);
+      resetSyncButton(btn);
+      if(silent)throw e;
+      return;
+    }
+    // 60 秒内只允许拉起一次后端，防止多个定时器并发反复启动
+    var nowTs=Date.now();
+    if(window.__dwsLaunchAt&&nowTs-window.__dwsLaunchAt<60000){
+      resetSyncButton(btn);
+      if(silent)throw e;
+      return;
+    }
+    window.__dwsLaunchAt=nowTs;
     // 服务没启动，尝试后台启动
     if(!silent)T("正在启动同步服务...","i");
     try{
