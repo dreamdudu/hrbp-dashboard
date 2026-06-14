@@ -229,6 +229,34 @@ function Get-TaskAttachmentDir {
     return @{ Dir = $dir; SafeId = $safeId }
 }
 
+function Test-DingtalkReachable {
+    try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
+    try {
+        $req = [System.Net.WebRequest]::Create("https://oapi.dingtalk.com/")
+        $req.Method = "GET"
+        $req.Timeout = 7000
+        $req.ReadWriteTimeout = 7000
+        try {
+            $resp = $req.GetResponse()
+            $resp.Close()
+            return $true
+        } catch [System.Net.WebException] {
+            $st = $_.Exception.Status
+            if ($st -eq [System.Net.WebExceptionStatus]::ProtocolError) { return $true }
+            if ($st -eq [System.Net.WebExceptionStatus]::Timeout -or
+                $st -eq [System.Net.WebExceptionStatus]::ConnectFailure -or
+                $st -eq [System.Net.WebExceptionStatus]::NameResolutionFailure -or
+                $st -eq [System.Net.WebExceptionStatus]::SecureChannelFailure -or
+                $st -eq [System.Net.WebExceptionStatus]::TrustFailure -or
+                $st -eq [System.Net.WebExceptionStatus]::SendFailure -or
+                $st -eq [System.Net.WebExceptionStatus]::ReceiveFailure) { return $false }
+            return $true
+        }
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-DwsJson {
     param([string[]] $DwsArgs)
 
@@ -409,12 +437,15 @@ while ($true) {
 
         if ($requestPath -eq "/auth-status") {
             try {
-                $res = Invoke-DwsJson @("contact", "user", "get-self", "--format", "json")
-                $body = if ($res.Body) { [string]$res.Body } else { "" }
-                $authed = $true; $network = $false
-                if ($body -match 'not_authenticated') { $authed = $false }
-                elseif ($res.ExitCode -ne 0) { $authed = $false; $network = $true }
-                $message = @{ success = $true; authenticated = $authed; network = $network } | ConvertTo-Json -Compress
+                if (-not (Test-DingtalkReachable)) {
+                    $message = @{ success = $true; authenticated = $false; network = $true } | ConvertTo-Json -Compress
+                } else {
+                    $res = Invoke-DwsJson @("contact", "user", "get-self", "--format", "json")
+                    $body = if ($res.Body) { [string]$res.Body } else { "" }
+                    $authed = $true
+                    if ($body -match 'not_authenticated' -or $res.ExitCode -ne 0) { $authed = $false }
+                    $message = @{ success = $true; authenticated = $authed; network = $false } | ConvertTo-Json -Compress
+                }
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             } catch {
                 Write-ServerLog "auth-status exception: $($_.Exception.Message)"

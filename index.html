@@ -4199,19 +4199,9 @@ function syncFromDingtalk(options){
     return result;
   }).catch(function(e){
     if(syncErrorMessage(e).indexOf("钉钉未登录")===0){
-      if(silent){
-        setSyncStatus("钉钉日程自动同步暂停：请先完成钉钉登录授权",true);
-        resetSyncButton(btn);
-        throw e;
-      }
-      T(syncErrorMessage(e),"i");
-      startDwsAuth().then(function(){
-        T("授权页已打开，完成授权后请再次点击同步","s");
-      }).catch(function(authErr){
-        T("自动打开授权失败，请手动运行 dws auth login","w");
-      }).finally(function(){
-        resetSyncButton(btn);
-      });
+      resetSyncButton(btn);
+      ensureDingtalkAuth();
+      if(silent)throw e;
       return;
     }
     if(syncErrorMessage(e).indexOf("无法连接钉钉服务器")===0){
@@ -4385,7 +4375,7 @@ function readFileAsDataURL(file){return new Promise(function(res,rej){var rd=new
 function openTaskFolder(id){fetch("/open-folder?task="+encodeURIComponent(id)).then(function(r){return r.json();}).then(function(d){if(!d||!d.success)T("打开文件夹失败","w");}).catch(function(){T("打开失败（需本地服务器运行）","w");});}
 var CPL_SAVING=false;
 async function confirmComplete(){if(CPL_SAVING)return;var id=CPL_TASK_ID;if(!id)return;var t=await G(id);if(!t||t.status==="completed"){closeCompleteModal();return;}var note=document.getElementById("cpl-note").value.trim();CPL_SAVING=true;var btn=document.querySelector("#completeModal .td-acts .pri");if(btn){btn.disabled=true;btn.textContent="存档中...";}try{var saved=[];for(var i=0;i<CPL_ATT.length;i++){var a=CPL_ATT[i];if(a.path){saved.push({name:a.name,size:a.size,path:a.path});continue;}var dataUrl=await readFileAsDataURL(a.file);var b64=(dataUrl.split(",")[1])||"";var r=await fetch("/upload-attachment",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({taskId:id,name:a.name,dataBase64:b64})});var d=await r.json().catch(function(){return{};});if(!r.ok||!d.success)throw new Error((d&&d.error)||("HTTP "+r.status));saved.push({name:d.name||a.name,size:d.size||a.size,path:d.path});}t.status="completed";t.completedAt=new Date().toISOString();t.completionNote=note;t.completionAttachments=saved;await PT(t);if(t.type==="recurring"&&t.recurringPattern){var nx=JSON.parse(JSON.stringify(t));nx.id=ID();nx.status="active";nx.completedAt=null;nx.completionNote="";nx.completionAttachments=[];nx.createdAt=new Date().toISOString();var ddl=new Date(t.deadline+"T00:00:00");switch(t.recurringPattern){case"daily":ddl.setDate(ddl.getDate()+1);break;case"weekly":ddl.setDate(ddl.getDate()+7);break;case"monthly":ddl.setMonth(ddl.getMonth()+1);break;case"quarterly":ddl.setMonth(ddl.getMonth()+3);break;}nx.deadline=ddl.toISOString().slice(0,10);await PT(nx);}closeCompleteModal();await LOAD();T("已完成并存档","s");}catch(e){T("存档失败："+(e&&e.message?e.message:e),"w");}finally{CPL_SAVING=false;var b2=document.querySelector("#completeModal .td-acts .pri");if(b2){b2.disabled=false;b2.textContent="确认完成";}}}
-async function runMsgAnalysis(reason){if(MSG_ANALYSIS_RUNNING)return;MSG_ANALYSIS_RUNNING=true;try{await ensureStateLoaded();if(!llmConfigured()){setMsgStatus("消息分析：未配置大模型，已跳过");return;}var now=new Date(),endStr=fmtDateTime(now),startStr=LS("msg_last_sync")||(TD()+" 00:00:00");if(startStr>=endStr){setMsgStatus("消息分析：暂无新时间窗口");return;}setMsgStatus("消息分析：正在拉取钉钉消息...");var r=await fetch("/sync-messages?start="+encodeURIComponent(startStr)+"&end="+encodeURIComponent(endStr));var data=await r.json().catch(function(){return{};});if(!r.ok||data.success===false)throw Error((data&&data.error)||("HTTP "+r.status));var selfName=(data.self&&data.self.name)||getSetting("name","");setMsgStatus("消息分析：正在匹配企业通讯录...");var nameMap=await buildNameMap(data);var tr=buildMsgTranscript(data,selfName,nameMap);var hhmm=nowTimeText();if(!tr.count){LS("msg_last_sync",endStr);setMsgStatus("消息分析：无新消息（"+hhmm+"）");return;}setMsgStatus("消息分析：大模型分析中（"+tr.count+"条消息）...");var items=await analyzeMessagesLLM(tr.text,selfName);var added=await addAiSuggestions(items);LS("msg_last_sync",endStr);setMsgStatus("消息分析：完成，新增 "+added+" 条建议（"+hhmm+"）");renderAiSuggestions();if(added&&reason!=="open")T("智能建议：新增 "+added+" 条","i");}catch(e){var em=(e&&e.message)?e.message:String(e);if(/not_authenticated|未登录/.test(em)){setMsgStatus("钉钉授权已失效，正在打开授权页面，请扫码登录后刷新看板",true);ensureDingtalkAuth();}else if(/timeout|handshake|TLS|connection|refused|dial|network|无法连接|超时|net\/http|EOF|Failed to fetch/i.test(em)){setMsgStatus("无法连接钉钉服务器，请检查网络后重试",true);}else setMsgStatus("消息分析失败："+em,true);}finally{MSG_ANALYSIS_RUNNING=false;}}
+async function runMsgAnalysis(reason){if(MSG_ANALYSIS_RUNNING)return;MSG_ANALYSIS_RUNNING=true;try{await ensureStateLoaded();if(!llmConfigured()){setMsgStatus("消息分析：未配置大模型，已跳过");return;}var now=new Date(),endStr=fmtDateTime(now),startStr=LS("msg_last_sync")||(TD()+" 00:00:00");if(startStr>=endStr){setMsgStatus("消息分析：暂无新时间窗口");return;}setMsgStatus("消息分析：正在拉取钉钉消息...");var r=await fetch("/sync-messages?start="+encodeURIComponent(startStr)+"&end="+encodeURIComponent(endStr));var data=await r.json().catch(function(){return{};});if(!r.ok||data.success===false)throw Error((data&&data.error)||("HTTP "+r.status));var selfName=(data.self&&data.self.name)||getSetting("name","");setMsgStatus("消息分析：正在匹配企业通讯录...");var nameMap=await buildNameMap(data);var tr=buildMsgTranscript(data,selfName,nameMap);var hhmm=nowTimeText();if(!tr.count){LS("msg_last_sync",endStr);setMsgStatus("消息分析：无新消息（"+hhmm+"）");return;}setMsgStatus("消息分析：大模型分析中（"+tr.count+"条消息）...");var items=await analyzeMessagesLLM(tr.text,selfName);var added=await addAiSuggestions(items);LS("msg_last_sync",endStr);setMsgStatus("消息分析：完成，新增 "+added+" 条建议（"+hhmm+"）");renderAiSuggestions();if(added&&reason!=="open")T("智能建议：新增 "+added+" 条","i");}catch(e){var em=(e&&e.message)?e.message:String(e);if(/not_authenticated|未登录|timeout|handshake|TLS|connection|refused|dial|network|无法连接|超时|net\/http|EOF|Failed to fetch/i.test(em)){ensureDingtalkAuth().then(function(ok){if(ok)setMsgStatus("消息分析失败："+em,true);});}else setMsgStatus("消息分析失败："+em,true);}finally{MSG_ANALYSIS_RUNNING=false;}}
 document.addEventListener("DOMContentLoaded",function(){setTimeout(function(){ensureDingtalkAuth().then(function(ok){if(ok){startAutoDingtalkSync();setTimeout(startMsgAutoAnalysis,1400);}});},1800);setInterval(updateCalStats,60000);});
 </script>
                                                                                                                         </body>
