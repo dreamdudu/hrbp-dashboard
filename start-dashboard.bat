@@ -3,6 +3,9 @@ chcp 65001 >nul
 title HRBP Dashboard
 cd /d "%~dp0"
 
+rem Start the 鲸+ OA todo background sync loop (single-instance; reads enable/interval from dashboard state; no Windows Task Scheduler)
+start "" /min "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0oa_sync_loop.ps1"
+
 rem Fast path: if a server is already running and reachable, just open it
 if not exist ".port.txt" goto LAUNCH
 set /p PORT=<.port.txt

@@ -702,6 +702,23 @@ while ($true) {
             continue
         }
 
+        if ($requestPath -eq "/sync-oa") {
+            try {
+                $node = (Get-Command node -ErrorAction SilentlyContinue).Source
+                $oaScript = Join-Path $scriptDir "oa-sync\oa_silent_sync.js"
+                if (-not $node) { throw "未找到 node，请确认已安装 Node.js" }
+                if (-not [System.IO.File]::Exists($oaScript)) { throw "未找到 oa_silent_sync.js（应位于 ..\oa-sync\）" }
+                Start-Process -FilePath $node -ArgumentList ('"' + $oaScript + '"') -WindowStyle Hidden
+                $message = @{ success = $true; started = $true } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                Write-ServerLog "sync-oa exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
         if ($requestPath -like "/sync-emails*") {
             try {
                 $startTime = Get-QueryValue $requestPath "start"
