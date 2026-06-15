@@ -702,6 +702,24 @@ while ($true) {
             continue
         }
 
+        if ($requestPath -eq "/oa-login") {
+            try {
+                $edgeExe = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+                if (-not [System.IO.File]::Exists($edgeExe)) { $edgeExe = "msedge.exe" }
+                $oaProfile = Join-Path $scriptDir "oa-sync\edge-profile"
+                $oaUrl = "https://zmp.iwhalecloud.com/fish-zmp/modules/todoItem/index.jsp"
+                # 普通(可见)窗口，带调试端口；若已有同配置实例则在其中前台打开登录页
+                Start-Process -FilePath $edgeExe -ArgumentList '--remote-debugging-port=9333', '--remote-allow-origins=*', ("--user-data-dir=$oaProfile"), '--new-window', $oaUrl
+                $message = @{ success = $true } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                Write-ServerLog "oa-login exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
         if ($requestPath -eq "/sync-oa") {
             try {
                 $node = (Get-Command node -ErrorAction SilentlyContinue).Source

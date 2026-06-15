@@ -43,9 +43,14 @@ while ($true) {
             try {
                 Start-Process -FilePath $edge -ArgumentList '--remote-debugging-port=9333', '--remote-allow-origins=*', ("--user-data-dir=$edgeProfile"), '--new-window', $todoUrl -WindowStyle Minimized
             } catch {}
-            Start-Sleep -Seconds 15
+            $w = 0; while (-not (Test-PortUp 9333) -and $w -lt 30) { Start-Sleep -Seconds 2; $w += 2 }
+            if (Test-PortUp 9333) { Start-Sleep -Seconds 6 }
         }
         try { & $node $oaScript | Out-Null } catch {}
+        if ($LASTEXITCODE -eq 3) {
+            # 会话过期：弹出可见的飞连登录窗口，提示用户手动登录
+            try { Start-Process -FilePath $edge -ArgumentList '--remote-debugging-port=9333', '--remote-allow-origins=*', ("--user-data-dir=$edgeProfile"), '--new-window', $todoUrl } catch {}
+        }
     }
     Start-Sleep -Seconds ($interval * 60)
 }
