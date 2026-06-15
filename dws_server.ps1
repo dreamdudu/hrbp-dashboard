@@ -394,6 +394,74 @@ function Invoke-DwsMessageSync {
     }
 }
 
+function Invoke-OutlookEmailSync {
+    param([string] $StartTime, [string] $EndTime, [int] $Max = 60)
+
+    $startDt = [DateTime]::Parse($StartTime)
+    $endDt = [DateTime]::Parse($EndTime)
+
+    $outlook = $null
+    try {
+        $outlook = New-Object -ComObject Outlook.Application
+    } catch {
+        throw "无法连接 Outlook（请确保 Outlook 已安装并已登录 Exchange 账户）：$($_.Exception.Message)"
+    }
+
+    $ns = $outlook.GetNamespace("MAPI")
+    $inbox = $ns.GetDefaultFolder(6)  # olFolderInbox
+    $items = $inbox.Items
+    try { $items.Sort("[ReceivedTime]", $true) } catch {}  # newest first
+
+    $emails = @()
+    $count = 0
+    $scanned = 0
+    foreach ($item in $items) {
+        if ($count -ge $Max) { break }
+        $scanned++
+        if ($scanned -gt 600) { break }
+
+        $cls = 0
+        try { $cls = [int]$item.Class } catch {}
+        if ($cls -ne 43) { continue }  # olMail only
+
+        $rt = $null
+        try { $rt = [DateTime]$item.ReceivedTime } catch { continue }
+        if ($rt -lt $startDt) { break }   # sorted desc: everything after is older
+        if ($rt -gt $endDt) { continue }
+
+        $subject = ""; $body = ""; $fromName = ""; $fromAddr = ""; $toStr = ""; $ccStr = ""
+        try { $subject = [string]$item.Subject } catch {}
+        try { $body = [string]$item.Body } catch {}
+        try { $fromName = [string]$item.SenderName } catch {}
+        try {
+            $fromAddr = [string]$item.SenderEmailAddress
+            if ($fromAddr -like "/*") {
+                try {
+                    $eu = $item.Sender.GetExchangeUser()
+                    if ($eu -and $eu.PrimarySmtpAddress) { $fromAddr = [string]$eu.PrimarySmtpAddress }
+                } catch {}
+            }
+        } catch {}
+        try { $toStr = [string]$item.To } catch {}
+        try { $ccStr = [string]$item.CC } catch {}
+
+        if ($body.Length -gt 4000) { $body = $body.Substring(0, 4000) }
+
+        $emails += @{
+            subject = $subject
+            from = $fromName
+            fromAddress = $fromAddr
+            to = $toStr
+            cc = $ccStr
+            received = $rt.ToString("yyyy-MM-dd HH:mm:ss")
+            body = $body
+        }
+        $count++
+    }
+
+    return @{ success = $true; emails = @($emails); count = $count; scanned = $scanned }
+}
+
 $server = New-BoardListener
 $listener = $server.Listener
 $port = $server.Port
@@ -629,6 +697,25 @@ while ($true) {
             } catch {
                 Write-ServerLog "contact-lookup exception: $($_.Exception.Message)"
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 502 "Bad Gateway" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/sync-emails*") {
+            try {
+                $startTime = Get-QueryValue $requestPath "start"
+                $endTime = Get-QueryValue $requestPath "end"
+                if ([string]::IsNullOrWhiteSpace($startTime)) { $startTime = (Get-Date).AddDays(-3).ToString("yyyy-MM-dd HH:mm:ss") }
+                if ([string]::IsNullOrWhiteSpace($endTime)) { $endTime = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
+
+                $payload = Invoke-OutlookEmailSync $startTime $endTime
+                $json = $payload | ConvertTo-Json -Depth 6 -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($json))
+            } catch {
+                $errText = $_.Exception.Message
+                Write-ServerLog "sync-emails exception: $errText"
+                $message = @{ success = $false; error = $errText } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 502 "Bad Gateway" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
             continue
