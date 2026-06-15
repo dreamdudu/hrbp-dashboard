@@ -1,5 +1,5 @@
-﻿# 同步钉钉日程脚本
-# 依赖：dws 命令行工具（https://github.com/open-dingtalk/dws）
+﻿# DingTalk calendar sync script
+# Requires: the dws CLI tool (https://github.com/open-dingtalk/dws)
 
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -108,7 +108,7 @@ try {
         }
     }
     
-    # 确保输出为数组（PowerShell 单条记录会输出对象而非数组）
+    # Ensure the output is an array (PowerShell emits a single record as an object, not an array)
     $jsContent = "window.__dingtalkSyncResult = " + (ConvertTo-Json -InputObject $events -Depth 3 -Compress) + ";"
     $jsContent | Out-File -FilePath $resultFile -Encoding utf8
     

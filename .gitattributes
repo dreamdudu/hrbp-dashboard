@@ -1,4 +1,4 @@
-# Windows 脚本必须使用 CRLF 行尾，否则 cmd 的 goto/标签会失效、WScript 也可能解析异常
+# Windows scripts must use CRLF line endings; otherwise cmd goto/labels break and WScript may misparse
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.vbs text eol=crlf

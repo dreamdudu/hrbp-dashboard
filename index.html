@@ -4330,8 +4330,8 @@ function syncFromDingtalk(options){
       if(silent){resetSyncButton(btn);throw e;}
       T(netMsg,"w");resetSyncButton(btn);return;
     }
-    // 仅当确实连不上本地服务（fetch 网络错误）时才尝试启动后端，
-    // 避免钉钉侧错误也被当成“服务没启动”而反复拉起新进程导致端口不断变化
+    // Only try to launch the backend when the local service is truly unreachable (fetch network error),
+    // so DingTalk-side errors aren't mistaken for "service not started" and don't keep spawning processes / churning ports
     var localDown=(e instanceof TypeError)||/Failed to fetch|NetworkError|Load failed|加载失败/i.test(syncErrorMessage(e));
     if(!localDown){
       if(!silent)T(syncErrorMessage(e),"w");
@@ -4340,7 +4340,7 @@ function syncFromDingtalk(options){
       if(silent)throw e;
       return;
     }
-    // 60 秒内只允许拉起一次后端，防止多个定时器并发反复启动
+    // Allow launching the backend at most once per 60s to prevent concurrent timers from relaunching repeatedly
     var nowTs=Date.now();
     if(window.__dwsLaunchAt&&nowTs-window.__dwsLaunchAt<60000){
       resetSyncButton(btn);
@@ -4348,7 +4348,7 @@ function syncFromDingtalk(options){
       return;
     }
     window.__dwsLaunchAt=nowTs;
-    // 服务没启动，尝试后台启动
+    // Service not running; try to start it in the background
     if(!silent)T("正在启动同步服务...","i");
     try{
       var a=document.createElement("a");

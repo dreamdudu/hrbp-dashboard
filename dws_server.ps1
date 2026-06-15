@@ -4,25 +4,25 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 $logPath = Join-Path $scriptDir "dws_server.log"
 
-# 单实例互斥锁：同一看板目录只允许一个服务进程，避免重复启动后端口不断变化
+# Single-instance mutex: allow only one server process per board directory, preventing port churn from repeated launches
 $md5 = [System.Security.Cryptography.MD5]::Create()
 $dirBytes = [System.Text.Encoding]::UTF8.GetBytes($scriptDir.ToLowerInvariant())
 $dirHash = ([System.BitConverter]::ToString($md5.ComputeHash($dirBytes))).Replace('-', '')
 $mutexName = "Global\HRBP_DWS_Server_" + $dirHash
-# 用 WaitOne(0) 判定“所有权”而非对象是否存在：只有真正持有锁的进程才是运行中的服务，
-# 避免被挡下的实例仅打开句柄就让后续实例误判为“已有服务”而无人启动
+# Use WaitOne(0) to test ownership rather than object existence: only a process that truly holds the lock is the running server,
+# so a blocked instance merely holding a handle won't make later instances wrongly think a server is already running
 $createdNew = $false
 $mutex = New-Object System.Threading.Mutex($false, $mutexName, [ref]$createdNew)
 $acquired = $false
 try { $acquired = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $acquired = $true }
 if (-not $acquired) {
-    # 另一个实例正持有锁（真正在运行的服务）：立即退出，不重复占用端口
+    # Another instance holds the lock (the actually running server): exit immediately, do not grab another port
     try {
         Add-Content -Path $logPath -Encoding utf8 -Value "$((Get-Date).ToString("s")) another server instance is already running, exiting pid=$PID"
     } catch {}
     exit 0
 }
-# 本进程已取得锁的所有权，持有引用直到进程退出
+# This process now owns the lock; keep the reference for the process lifetime
 $script:SingletonMutex = $mutex
 $dataDir = Join-Path $scriptDir "data"
 $backupDir = Join-Path $dataDir "backups"
