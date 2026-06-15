@@ -48,8 +48,8 @@ while ($true) {
         }
         try { & $node $oaScript | Out-Null } catch {}
         if ($LASTEXITCODE -eq 3) {
-            # 会话过期：弹出可见的飞连登录窗口，提示用户手动登录
-            try { Start-Process -FilePath $edge -ArgumentList '--remote-debugging-port=9333', '--remote-allow-origins=*', ("--user-data-dir=$edgeProfile"), '--new-window', $todoUrl } catch {}
+            # 会话过期：用干净启动脚本弹出单个可见登录窗口，提示用户手动登录
+            try { Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', (Join-Path $scriptDir "oa_open_login.ps1") -WindowStyle Hidden } catch {}
         }
     }
     Start-Sleep -Seconds ($interval * 60)

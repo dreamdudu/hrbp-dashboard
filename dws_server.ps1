@@ -704,16 +704,33 @@ while ($true) {
 
         if ($requestPath -eq "/oa-login") {
             try {
-                $edgeExe = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-                if (-not [System.IO.File]::Exists($edgeExe)) { $edgeExe = "msedge.exe" }
-                $oaProfile = Join-Path $scriptDir "oa-sync\edge-profile"
-                $oaUrl = "https://zmp.iwhalecloud.com/fish-zmp/modules/todoItem/index.jsp"
-                # 普通(可见)窗口，带调试端口；若已有同配置实例则在其中前台打开登录页
-                Start-Process -FilePath $edgeExe -ArgumentList '--remote-debugging-port=9333', '--remote-allow-origins=*', ("--user-data-dir=$oaProfile"), '--new-window', $oaUrl
+                $loginScript = Join-Path $scriptDir "oa_open_login.ps1"
+                Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $loginScript -WindowStyle Hidden
                 $message = @{ success = $true } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             } catch {
                 Write-ServerLog "oa-login exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/oa-status") {
+            try {
+                $running = $false; $loggedIn = $false
+                try {
+                    $resp = Invoke-WebRequest "http://127.0.0.1:9333/json" -UseBasicParsing -TimeoutSec 4
+                    $running = $true
+                    $tabs = $resp.Content | ConvertFrom-Json
+                    $pages = @($tabs | Where-Object { $_.type -eq 'page' })
+                    $oa = @($pages | Where-Object { $_.url -like '*zmp.iwhalecloud.com*' })
+                    $onLogin = @($pages | Where-Object { $_.url -like '*jinglian*' -or $_.url -like '*/login*' -or $_.url -like '*oauth2*' })
+                    if ($oa.Count -gt 0 -and $onLogin.Count -eq 0) { $loggedIn = $true }
+                } catch { $running = $false }
+                $message = @{ success = $true; running = $running; loggedIn = $loggedIn } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
