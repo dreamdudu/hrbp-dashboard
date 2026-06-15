@@ -3,7 +3,7 @@ chcp 65001 >nul
 title HRBP Dashboard
 cd /d "%~dp0"
 
-rem 快速通道：若已有服务在运行且端口可用，直接打开，避免重复启动
+rem Fast path: if a server is already running and reachable, just open it
 if not exist ".port.txt" goto LAUNCH
 set /p PORT=<.port.txt
 if "%PORT%"=="" goto LAUNCH
@@ -13,7 +13,7 @@ curl -s -o nul -m 2 "http://127.0.0.1:%PORT%/" && goto STARTED
 echo Starting dashboard service...
 start "" /min "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0dws_server.ps1"
 
-rem 等待服务就绪：端口文件出现且服务可访问（最多约 24 秒）
+rem Wait until the service is up (port file present and server reachable)
 set WAIT=0
 :CHECK
 ping -n 2 127.0.0.1 >nul
