@@ -4608,7 +4608,7 @@ async function renderLlmUsage(){var el=document.getElementById("llm-usage");if(!
 function aiPersonText(s){if(!s.person||!s.person.name)return"";if(s.person.ext)return s.person.name+"（外部）";return s.person.name+(s.person.jobNumber?"（工号 "+s.person.jobNumber+"）":"");}
 function aiPersonJobName(s){if(!s.person||!s.person.name)return"";if(s.person.ext)return s.person.name+"（外部）";return(s.person.jobNumber?s.person.jobNumber+" ":"")+s.person.name;}
 function aiPersonLabel(s){return s.type==="update"?"提出人":s.type==="cancel"?"取消人":s.type==="schedule"?"发起人":(s.direction==="from_me"?"执行人":"交办人");}
-function aiSourceText(s){if(s.sourceKind==="email")return"邮件智能分析（"+(s.emailFrom||"发件人")+(s.emailSubject?"："+s.emailSubject:"")+"）";if(s.convType==="group")return"钉钉智能分析（"+(s.conv||"未知群")+" 群聊消息）";var who=aiPersonJobName(s)||s.conv||"对方";return"钉钉智能分析（和 "+who+" 的单聊消息）";}
+function aiSourceText(s){if(s.sourceKind==="oa")return"【鲸+】"+(s.conv?"· "+s.conv:"");if(s.sourceKind==="email")return"邮件智能分析（"+(s.emailFrom||"发件人")+(s.emailSubject?"："+s.emailSubject:"")+"）";if(s.convType==="group")return"钉钉智能分析（"+(s.conv||"未知群")+" 群聊消息）";var who=aiPersonJobName(s)||s.conv||"对方";return"钉钉智能分析（和 "+who+" 的单聊消息）";}
 var AI_SUG_FILTER="pending";
 function setAiSugFilter(f){AI_SUG_FILTER=f;AI_PAGE=1;document.querySelectorAll("[data-aif]").forEach(function(b){b.classList.toggle("active",b.dataset.aif===f);});renderAiSuggestions();}
 function updateAiBadge(){var pend=getAiSugs().filter(function(s){return s.state==="pending";}).length;var b=document.getElementById("nav-ai-badge");if(b)b.textContent=pend;return pend;}
