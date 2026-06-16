@@ -2,7 +2,20 @@
 $env:PATH = $localBin + ";" + [Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [Environment]::GetEnvironmentVariable("PATH", "Machine")
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
-$logPath = Join-Path $scriptDir "dws_server.log"
+$logsDir = Join-Path $scriptDir "logs"
+if (-not [System.IO.Directory]::Exists($logsDir)) { [void][System.IO.Directory]::CreateDirectory($logsDir) }
+$logPath = Join-Path $logsDir "dws_server.log"
+$maxLogBytes = 5MB
+function Invoke-LogRotation([string] $Path) {
+    try {
+        if ([System.IO.File]::Exists($Path) -and ((Get-Item -LiteralPath $Path).Length -gt $maxLogBytes)) {
+            $dir = [System.IO.Path]::GetDirectoryName($Path)
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+            $rotated = Join-Path $dir ($base + "." + (Get-Date).ToString("yyyyMMdd-HHmmss") + ".log")
+            Move-Item -LiteralPath $Path -Destination $rotated -Force
+        }
+    } catch {}
+}
 
 # Single-instance mutex: allow only one server process per board directory, preventing port churn from repeated launches
 $md5 = [System.Security.Cryptography.MD5]::Create()
@@ -18,6 +31,7 @@ try { $acquired = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexExce
 if (-not $acquired) {
     # Another instance holds the lock (the actually running server): exit immediately, do not grab another port
     try {
+        Invoke-LogRotation $logPath
         Add-Content -Path $logPath -Encoding utf8 -Value "$((Get-Date).ToString("s")) another server instance is already running, exiting pid=$PID"
     } catch {}
     exit 0
@@ -36,6 +50,7 @@ if (-not [System.IO.File]::Exists($dwsPath)) {
 function Write-ServerLog {
     param([string] $Message)
     try {
+        Invoke-LogRotation $logPath
         Add-Content -Path $logPath -Encoding utf8 -Value "$((Get-Date).ToString("s")) $Message"
     } catch {}
 }

@@ -1,5 +1,6 @@
 sync_result.js
 .port.txt
+logs/
 dws_server.log
 sync_response.json
 test_output.html
