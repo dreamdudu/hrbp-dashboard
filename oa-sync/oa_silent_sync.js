@@ -96,9 +96,11 @@ async function drill(cat) {
 }
 
 function llmCfg(state) { const s = state.settings || {}; return { url: (s.llm_url || '').replace(/\/+$/, ''), key: s.llm_key, model: s.llm_model }; }
+// 清除落单的 UTF-16 代理字符（如 emoji 被截断后残留的半个代理对），避免 JSON 请求体非法转义导致大模型 HTTP 400
+function stripLoneSurrogates(s) { return String(s == null ? '' : s).replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, ''); }
 async function llmExtract(cfg, catName, content) {
-  const sys = '你是HRBP工作助手。下面是我在OA系统【鲸+】中"' + catName + '"的待办列表页面内容（可能含表格行、字段、状态）。请提取每一条【实际待处理事项】，忽略员工筛选侧栏、菜单、按钮、表头。只输出严格的JSON数组，每个元素：{"bizId":"该事项的唯一业务标识，优先取单号/工单号/工号/申请编号等数字编号(原样保留数字)，没有则留空","title":"简短标题(20字内)","summary":"一句话总结该事项(30字内)","detail":"该事项的关键实际内容，原文摘录(申请人/单号/日期/金额/事由/状态等)"}。没有可提取事项时输出 []。';
-  const r = await fetch(cfg.url + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key }, body: JSON.stringify({ model: cfg.model, messages: [{ role: 'system', content: sys }, { role: 'user', content: content.slice(0, 9000) }], max_tokens: 1800, temperature: 0.2 }) });
+  const sys ='你是HRBP工作助手。下面是我在OA系统【鲸+】中"' + catName + '"的待办列表页面内容（可能含表格行、字段、状态）。请提取每一条【实际待处理事项】，忽略员工筛选侧栏、菜单、按钮、表头。只输出严格的JSON数组，每个元素：{"bizId":"该事项的唯一业务标识，优先取单号/工单号/工号/申请编号等数字编号(原样保留数字)，没有则留空","title":"简短标题(20字内)","summary":"一句话总结该事项(30字内)","detail":"该事项的关键实际内容，原文摘录(申请人/单号/日期/金额/事由/状态等)"}。没有可提取事项时输出 []。';
+  const r = await fetch(cfg.url + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key }, body: JSON.stringify({ model: cfg.model, messages: [{ role: 'system', content: stripLoneSurrogates(sys) }, { role: 'user', content: stripLoneSurrogates(content.slice(0, 9000)) }], max_tokens: 1800, temperature: 0.2 }) });
   if (!r.ok) throw new Error('LLM HTTP ' + r.status);
   const d = await r.json();
   const txt = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || '';
