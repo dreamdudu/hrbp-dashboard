@@ -130,6 +130,7 @@ function main() {
   let files = [];
   try { files = fs.readdirSync(FILES_DIR).filter(function (f) { return /\.xlsx$/i.test(f); }); } catch (e) {}
   writeStatus({ state: 'parsing', files: files, rows: 0, years: [], startedAt: startedAt });
+  try { fs.unlinkSync(path.join(CAT_DIR, '_smart.json')); } catch (e) {} // 数据已变，旧智能分析作废
   log('parse start, files=' + files.length);
 
   if (!files.length) {

@@ -147,6 +147,7 @@ function Send-HttpResponse {
         "Content-Type: $ContentType",
         "Content-Length: $($Body.Length)",
         "Access-Control-Allow-Origin: *",
+        "Cache-Control: no-cache, no-store, must-revalidate",
         "Connection: close",
         "",
         ""
@@ -905,6 +906,33 @@ while ($true) {
                 Start-AnalyticsParse $cat
                 $message = @{ success = $true } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/analytics-smart*" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $info = Get-AnalyticsDir ([string]$payload.cat)
+                $obj = @{ text = [string]$payload.text; at = [string]$payload.at; years = $payload.years; rowCount = $payload.rowCount }
+                [System.IO.File]::WriteAllText((Join-Path $info.Dir "_smart.json"), ($obj | ConvertTo-Json -Depth 5 -Compress), (New-Object System.Text.UTF8Encoding($false)))
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"success":true}'))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/analytics-smart*") {
+            try {
+                $info = Get-AnalyticsDir (Get-QueryValue $requestPath "cat")
+                $sp = Join-Path $info.Dir "_smart.json"
+                $body = if ([System.IO.File]::Exists($sp)) { [System.IO.File]::ReadAllText($sp, [Text.Encoding]::UTF8) } else { '{}' }
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
             } catch {
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
