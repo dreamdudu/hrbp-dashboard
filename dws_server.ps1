@@ -492,8 +492,19 @@ while ($true) {
         $client = $listener.AcceptTcpClient()
         $client.ReceiveTimeout = 60000
         $stream = $client.GetStream()
-        $reader = [System.IO.StreamReader]::new($stream, [Text.Encoding]::UTF8, $false, 8192, $true)
-        $requestLine = $reader.ReadLine()
+        # 按字节读取请求头(读到 CRLF CRLF 为止)，再按 Content-Length 精确读满请求体后 UTF-8 解码。
+        # 旧实现用 StreamReader.Read 单次按字符读取，大请求体(base64 附件)会跨多个 TCP 段被截断，导致 FromBase64String 失败 → HTTP 500。
+        $headList = New-Object System.Collections.Generic.List[byte]
+        while ($true) {
+            $bb = $stream.ReadByte()
+            if ($bb -lt 0) { break }
+            $headList.Add([byte]$bb)
+            $hc = $headList.Count
+            if ($hc -ge 4 -and $headList[$hc - 4] -eq 13 -and $headList[$hc - 3] -eq 10 -and $headList[$hc - 2] -eq 13 -and $headList[$hc - 1] -eq 10) { break }
+        }
+        $headerText = [Text.Encoding]::ASCII.GetString($headList.ToArray())
+        $headerLines = $headerText -split "`r`n"
+        $requestLine = $headerLines[0]
 
         if ([string]::IsNullOrWhiteSpace($requestLine)) {
             Send-HttpResponse $client 400 "Bad Request" "text/plain; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes("Bad Request"))
@@ -501,12 +512,8 @@ while ($true) {
         }
 
         $contentLength = 0
-        while ($true) {
-            $line = $reader.ReadLine()
-            if ($null -eq $line -or $line -eq "") { break }
-            if ($line -match '^Content-Length:\s*(\d+)') {
-                $contentLength = [int]$matches[1]
-            }
+        foreach ($line in $headerLines) {
+            if ($line -match '^Content-Length:\s*(\d+)') { $contentLength = [int]$matches[1] }
         }
 
         $parts = $requestLine -split " "
@@ -514,11 +521,14 @@ while ($true) {
         $requestPath = $parts[1]
         $bodyText = ""
         if ($contentLength -gt 0) {
-            $buffer = New-Object char[] $contentLength
-            $read = $reader.Read($buffer, 0, $contentLength)
-            if ($read -gt 0) {
-                $bodyText = -join $buffer[0..($read - 1)]
+            $bodyBytes = New-Object byte[] $contentLength
+            $totalRead = 0
+            while ($totalRead -lt $contentLength) {
+                $r = $stream.Read($bodyBytes, $totalRead, $contentLength - $totalRead)
+                if ($r -le 0) { break }
+                $totalRead += $r
             }
+            $bodyText = [Text.Encoding]::UTF8.GetString($bodyBytes, 0, $totalRead)
         }
 
         if ($method -eq "OPTIONS") {
