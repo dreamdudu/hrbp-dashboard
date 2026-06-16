@@ -265,6 +265,26 @@ function Get-TaskAttachmentDir {
     return @{ Dir = $dir; SafeId = $safeId }
 }
 
+function Get-AnalyticsDir {
+    param([string] $Cat)
+    if ([string]::IsNullOrWhiteSpace($Cat)) { $Cat = "personnel-cost" }
+    if ($Cat -notmatch '^[a-z0-9\-]+$' -or @('personnel-cost') -notcontains $Cat) { throw "Invalid analytics category." }
+    $dir = Join-Path (Join-Path $dataDir "analytics") $Cat
+    $filesDir = Join-Path $dir "files"
+    if (-not [System.IO.Directory]::Exists($filesDir)) { [void][System.IO.Directory]::CreateDirectory($filesDir) }
+    return @{ Dir = $dir; Files = $filesDir }
+}
+
+function Start-AnalyticsParse {
+    param([string] $Cat)
+    $node = (Get-Command node -ErrorAction SilentlyContinue).Source
+    if (-not $node) { return }
+    $script = Join-Path $scriptDir "analytics\parse_personnel_cost.js"
+    if ([System.IO.File]::Exists($script)) {
+        try { Start-Process -FilePath $node -ArgumentList ('"' + $script + '"') -WindowStyle Hidden } catch {}
+    }
+}
+
 function Test-DingtalkReachable {
     try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
     try {
@@ -773,6 +793,119 @@ while ($true) {
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             } catch {
                 Write-ServerLog "sync-oa exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/analytics-status*") {
+            try {
+                $info = Get-AnalyticsDir (Get-QueryValue $requestPath "cat")
+                $sp = Join-Path $info.Dir "_status.json"
+                $body = if ([System.IO.File]::Exists($sp)) { [System.IO.File]::ReadAllText($sp, [Text.Encoding]::UTF8) } else { '{"state":"empty"}' }
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/analytics-data*") {
+            try {
+                $info = Get-AnalyticsDir (Get-QueryValue $requestPath "cat")
+                $ap = Join-Path $info.Dir "_agg.json"
+                $body = if ([System.IO.File]::Exists($ap)) { [System.IO.File]::ReadAllText($ap, [Text.Encoding]::UTF8) } else { '{"meta":{"years":[],"rowCount":0},"byYear":{}}' }
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/analytics-files*") {
+            try {
+                $info = Get-AnalyticsDir (Get-QueryValue $requestPath "cat")
+                $arr = @()
+                if ([System.IO.Directory]::Exists($info.Files)) {
+                    Get-ChildItem -Path $info.Files -Filter *.xlsx -File | Sort-Object Name | ForEach-Object { $arr += @{ name = $_.Name; size = $_.Length; mtime = $_.LastWriteTime.ToString("yyyy-MM-dd HH:mm") } }
+                }
+                $message = @{ success = $true; files = @($arr) } | ConvertTo-Json -Depth 5 -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/analytics-detail*") {
+            try {
+                $info = Get-AnalyticsDir (Get-QueryValue $requestPath "cat")
+                $dp = Join-Path $info.Dir "_detail.jsonl"
+                $page = 0; [int]::TryParse((Get-QueryValue $requestPath "page"), [ref]$page) | Out-Null; if ($page -lt 1) { $page = 1 }
+                $size = 0; [int]::TryParse((Get-QueryValue $requestPath "size"), [ref]$size) | Out-Null; if ($size -lt 1) { $size = 50 }; if ($size -gt 500) { $size = 500 }
+                $year = Get-QueryValue $requestPath "year"
+                $feeCat = Get-QueryValue $requestPath "feeCat"
+                $q = Get-QueryValue $requestPath "q"
+                $rows = New-Object System.Collections.Generic.List[string]
+                $total = 0; $startIdx = ($page - 1) * $size
+                if ([System.IO.File]::Exists($dp)) {
+                    foreach ($line in [System.IO.File]::ReadLines($dp, [Text.Encoding]::UTF8)) {
+                        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                        if ($year -and ($line -notmatch ('"y":"' + [regex]::Escape($year) + '"'))) { continue }
+                        if ($feeCat -and ($line -notmatch ('"fc":"' + [regex]::Escape($feeCat) + '"'))) { continue }
+                        if ($q -and ($line.IndexOf($q, [System.StringComparison]::OrdinalIgnoreCase) -lt 0)) { continue }
+                        if ($total -ge $startIdx -and $rows.Count -lt $size) { $rows.Add($line) }
+                        $total++
+                    }
+                }
+                $body = '{"total":' + $total + ',"page":' + $page + ',"size":' + $size + ',"rows":[' + ($rows -join ',') + ']}'
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/analytics-upload*" -and $method -eq "POST") {
+            try {
+                $info = Get-AnalyticsDir (Get-QueryValue $requestPath "cat")
+                $payload = $bodyText | ConvertFrom-Json
+                $name = [string]$payload.name
+                $b64 = [string]$payload.dataBase64
+                if ([string]::IsNullOrWhiteSpace($name)) { throw "Missing name." }
+                $safe = Get-SafeFileName $name
+                if ($safe -notmatch '\.xlsx$') { throw "仅支持 .xlsx 文件" }
+                $target = Join-Path $info.Files $safe
+                $bytes = [Convert]::FromBase64String($b64)
+                [System.IO.File]::WriteAllBytes($target, $bytes)
+                Start-AnalyticsParse (Get-QueryValue $requestPath "cat")
+                $message = @{ success = $true; name = $safe; size = $bytes.Length } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                Write-ServerLog "analytics-upload exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/analytics-delete-file" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $cat = [string]$payload.cat
+                $info = Get-AnalyticsDir $cat
+                $safe = Get-SafeFileName ([string]$payload.name)
+                $target = Join-Path $info.Files $safe
+                if ([System.IO.File]::Exists($target)) { [System.IO.File]::Delete($target) }
+                Start-AnalyticsParse $cat
+                $message = @{ success = $true } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }

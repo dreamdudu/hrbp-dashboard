@@ -7,6 +7,7 @@ test_output.html
 test_response.html
 data/*.json
 data/backups/
+data/analytics/
 attachments/
 oa-sync/edge-profile/
 oa-sync/*.log
