@@ -8,4 +8,5 @@ test_response.html
 data/*.json
 data/backups/
 attachments/
-oa-sync/
+oa-sync/edge-profile/
+oa-sync/*.log
