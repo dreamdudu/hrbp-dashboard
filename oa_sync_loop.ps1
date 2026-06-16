@@ -24,6 +24,8 @@ function Test-PortUp([int]$p) {
     try { $c = New-Object System.Net.Sockets.TcpClient; $c.Connect("127.0.0.1", $p); $c.Close(); return $true } catch { return $false }
 }
 
+# 每 60 秒一个 tick：每次都重读设置(开关/周期)，所以在设置里改动后约 1 分钟内即生效
+$lastRun = [DateTime]::MinValue
 while ($true) {
     $enabled = $true; $interval = 60
     try {
@@ -38,7 +40,8 @@ while ($true) {
     if ($interval -lt 5) { $interval = 5 }
     if ($interval -gt 1440) { $interval = 1440 }
 
-    if ($enabled -and $node -and [System.IO.File]::Exists($oaScript)) {
+    $due = ($lastRun -eq [DateTime]::MinValue) -or (((Get-Date) - $lastRun).TotalSeconds -ge ($interval * 60))
+    if ($enabled -and $due -and $node -and [System.IO.File]::Exists($oaScript)) {
         if (-not (Test-PortUp 9333)) {
             try {
                 Start-Process -FilePath $edge -ArgumentList '--remote-debugging-port=9333', '--remote-allow-origins=*', ("--user-data-dir=$edgeProfile"), '--new-window', $todoUrl -WindowStyle Minimized
@@ -51,6 +54,7 @@ while ($true) {
             # 会话过期：用干净启动脚本弹出单个可见登录窗口，提示用户手动登录
             try { Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', (Join-Path $scriptDir "oa_open_login.ps1") -WindowStyle Hidden } catch {}
         }
+        $lastRun = Get-Date
     }
-    Start-Sleep -Seconds ($interval * 60)
+    Start-Sleep -Seconds 60
 }
