@@ -73,7 +73,8 @@ async function getCategories() {
   await send('Page.navigate', { url: TODO_JSP }); await sleep(9000);
   const href = await evalJs('location.href');
   if (/jinglian|\/login|oauth2|passport/i.test(href)) { log('SESSION EXPIRED -> re-login (oa-start.bat)'); await writeStatus(false, 'OA 登录已过期，请重新登录（还原 OA 窗口或运行 oa-start.bat 完成飞连登录）'); process.exit(3); }
-  const expr = `(()=>{const pick=[];document.querySelectorAll('.list-group-item, li, [orderCode]').forEach(el=>{const text=(el.innerText||'').replace(/\\s+/g,' ').trim();if(!text)return;if(!/待办|待处理|待审|待提交|你有|审批|流程|事务|未读/i.test(text))return;const a=el.querySelector('a');pick.push({text,order:el.getAttribute('orderCode')||'',href:a?(a.getAttribute('href')||''):''});});const seen=new Set(),out=[];pick.forEach(x=>{if(!seen.has(x.text)){seen.add(x.text);out.push(x);}});return JSON.stringify(out);})()`;
+  // OA 真实待办项都带 orderCode 属性，直接纳入；无 orderCode 的再用关键词过滤（关键词已扩展：您有/请处理/配额/待领取等，避免漏抓不同表述的待办）
+  const expr = `(()=>{const pick=[];const KW=/待办|待处理|待审|待提交|待领取|待确认|待办理|待签收|待回复|待反馈|你有|您有|请处理|请您处理|配额|审批|审核|流程|事务|任务|未读|提醒|通知/i;document.querySelectorAll('.list-group-item, li, [orderCode]').forEach(el=>{const text=(el.innerText||'').replace(/\\s+/g,' ').trim();if(!text)return;const hasOrder=!!(el.getAttribute&&el.getAttribute('orderCode'));if(!hasOrder&&!KW.test(text))return;const a=el.querySelector('a');pick.push({text,order:el.getAttribute('orderCode')||'',href:a?(a.getAttribute('href')||''):''});});const seen=new Set(),out=[];pick.forEach(x=>{if(!seen.has(x.text)){seen.add(x.text);out.push(x);}});return JSON.stringify(out);})()`;
   return JSON.parse(await evalJs(expr));
 }
 
@@ -90,7 +91,10 @@ async function drill(cat) {
   onEvent = null;
   // visible list text from the module iframe (strip the staff sidebar)
   let iframeText = '';
-  try { iframeText = await evalJs(`(()=>{try{const f=document.querySelector('iframe');const d=f&&f.contentDocument;if(!d)return '';let t=(d.body.innerText||'').replace(/\\s+/g,' ');const i=t.indexOf('等待处理');return (i>=0?t.slice(i):t).slice(0,6000);}catch(e){return ''}})()`) || ''; } catch (e) {}
+  try { iframeText = await evalJs(`(()=>{try{const f=document.querySelector('iframe');const d=f&&f.contentDocument;if(d&&d.body){let t=(d.body.innerText||'').replace(/\\s+/g,' ');const i=t.indexOf('等待处理');return (i>=0?t.slice(i):t).slice(0,6000);}
+  // 无 iframe（部分模块如配额管理内容直接渲染在主文档）：取主文档正文，从业务锚点起截，剔除顶部菜单/应用导航
+  // 无 iframe：取主文档正文，从业务锚点起截（锚点在首页"关键事项/工时填报/考勤异常"统计区之后，slice 自然切掉这些非真实待办的仪表盘卡片）
+  let t=(document.body.innerText||'').replace(/\\s+/g,' ');const anchors=['组织配额下发','配额下发','计划下发时间','等待处理','待办明细','申请人','单据号','工单号'];let idx=-1;for(const a of anchors){const k=t.indexOf(a);if(k>=0&&(idx<0||k<idx))idx=k;}if(idx>0)t=t.slice(idx);return t.slice(0,6000);}catch(e){return ''}})()`) || ''; } catch (e) {}
   const data = cap.sort((a, b) => b.len - a.len)[0];
   return { iframeText, dataSample: data ? data.body.slice(0, 12000) : '' };
 }
@@ -99,8 +103,9 @@ function llmCfg(state) { const s = state.settings || {}; return { url: (s.llm_ur
 // 清除落单的 UTF-16 代理字符（如 emoji 被截断后残留的半个代理对），避免 JSON 请求体非法转义导致大模型 HTTP 400
 function stripLoneSurrogates(s) { return String(s == null ? '' : s).replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, ''); }
 async function llmExtract(cfg, catName, content) {
-  const sys ='你是HRBP工作助手。下面是我在OA系统【鲸+】中"' + catName + '"的待办列表页面内容（可能含表格行、字段、状态）。请提取每一条【实际待处理事项】，忽略员工筛选侧栏、菜单、按钮、表头。只输出严格的JSON数组，每个元素：{"bizId":"该事项的唯一业务标识，优先取单号/工单号/工号/申请编号等数字编号(原样保留数字)，没有则留空","title":"简短标题(20字内)","summary":"一句话总结该事项(30字内)","detail":"该事项的关键实际内容，原文摘录(申请人/单号/日期/金额/事由/状态等)"}。没有可提取事项时输出 []。';
-  const r = await fetch(cfg.url + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key }, body: JSON.stringify({ model: cfg.model, messages: [{ role: 'system', content: stripLoneSurrogates(sys) }, { role: 'user', content: stripLoneSurrogates(content.slice(0, 9000)) }], max_tokens: 1800, temperature: 0.2 }) });
+  const yr = TD().slice(0, 4);
+  const sys ='你是HRBP工作助手。今年是' + yr + '年。下面是我在OA系统【鲸+】中"' + catName + '"的待办列表/详情页面内容（可能含表格行、字段、状态、时间）。请提取每一条【实际待处理事项】，忽略员工筛选侧栏、菜单、按钮、表头、首页统计卡(如工时填报/考勤异常)。只输出严格的JSON数组，每个元素：{"bizId":"唯一业务标识，优先取单号/工单号/工号/申请编号等数字编号(原样保留数字)，没有则留空","title":"简短标题(20字内)","summary":"对该事项页面内容的总结(60-100字)：说明这是什么事项、涉及哪个组织/对象/申请人、关键数据(人数/金额/额度/单号/进度等)、需要我办理什么动作","detail":"页面关键内容的较完整原文摘录与明细(申请人/单号/日期/金额/事由/状态/各项明细等，尽量保留具体数字与名称)","startDate":"任务开始日期YYYY-MM-DD，从计划下发时间/开始/申请/生效等提取，只有月日无年份时用今年补全，无则留空","endDate":"任务结束或截止日期YYYY-MM-DD，从计划下发时间的结束、至/截止/结束/失效等提取，只有月日无年份时用今年补全，无则留空"}。例：内容含“计划下发时间：06月18日-06月22日”则 startDate=“' + yr + '-06-18”、endDate=“' + yr + '-06-22”。没有可提取事项时输出 []。';
+  const r = await fetch(cfg.url + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key }, body: JSON.stringify({ model: cfg.model, messages: [{ role: 'system', content: stripLoneSurrogates(sys) }, { role: 'user', content: stripLoneSurrogates(content.slice(0, 9000)) }], max_tokens: 2400, temperature: 0.2 }) });
   if (!r.ok) throw new Error('LLM HTTP ' + r.status);
   const d = await r.json();
   const txt = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || '';
@@ -158,7 +163,9 @@ async function main() {
     const title = String(it.title || b.cat).slice(0, 60);
     const link = b.href ? ('https://zmp.iwhalecloud.com/newZmp' + (b.href.startsWith('#') ? b.href : '#' + b.href)) : NEWZMP;
     const detail = String(it.detail || '').trim() + '\n来源类别：' + b.cat + '\n链接：' + link;
-    sugs.push({ id: rid(), key: x.key, type: 'todo', direction: 'to_me', title, person: { name: '', jobNumber: '', ext: true }, date: today, start: '', end: '', deadlineAt: '', priority: 'medium', summary: String(it.summary || title).slice(0, 120), conv: b.cat, convType: 'oa', sourceKind: 'oa', detail, createdAt: new Date().toISOString(), state: 'pending' });
+    const sd = /^\d{4}-\d{2}-\d{2}$/.test(String(it.startDate || '')) ? it.startDate : '';
+    const ed = /^\d{4}-\d{2}-\d{2}$/.test(String(it.endDate || '')) ? it.endDate : '';
+    sugs.push({ id: rid(), key: x.key, type: 'todo', direction: 'to_me', title, person: { name: '', jobNumber: '', ext: true }, date: sd || today, start: '', end: '', deadlineAt: ed ? (ed + ' 18:00') : '', priority: 'medium', summary: String(it.summary || title).slice(0, 120), conv: b.cat, convType: 'oa', sourceKind: 'oa', detail, createdAt: new Date().toISOString(), state: 'pending' });
     added++;
   }
   if (sugs.length > 200) sugs = sugs.slice(-200);
