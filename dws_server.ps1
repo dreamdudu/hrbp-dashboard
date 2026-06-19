@@ -1056,6 +1056,51 @@ while ($true) {
             continue
         }
 
+        if ($requestPath -eq "/affairs-action" -and $method -eq "POST") {
+            try {
+                # 本轮：DingTalk 动作仅预览(dry-run)，不真正执行；将 $affairsLiveExecute 改为 $true 即可开启真实执行。
+                $affairsLiveExecute = $false
+                $payload = $bodyText | ConvertFrom-Json
+                $type = [string]$payload.type
+                $p = $payload.params
+                function Pv($o, $k) { if ($o -and ($o.PSObject.Properties.Name -contains $k)) { return [string]$o.$k } return "" }
+                $args = $null
+                switch ($type) {
+                    "dingtalk_schedule" {
+                        $args = @("calendar", "event", "create", "--title", (Pv $p "title"), "--start", (Pv $p "start"), "--end", (Pv $p "end"))
+                        if (Pv $p "desc") { $args += @("--desc", (Pv $p "desc")) }
+                        if (Pv $p "location") { $args += @("--location", (Pv $p "location")) }
+                        if (Pv $p "attendees") { $args += @("--attendees", (Pv $p "attendees")) }
+                    }
+                    "dingtalk_msg_single" { $args = @("chat", "message", "send", "--user", (Pv $p "to"), "--title", (Pv $p "title"), "--text", (Pv $p "text")) }
+                    "dingtalk_msg_group" { $args = @("chat", "message", "send", "--group", (Pv $p "group"), "--title", (Pv $p "title"), "--text", (Pv $p "text")) }
+                    "dingtalk_ding" { $args = @("ding", "message", "send", "--users", (Pv $p "to"), "--content", (Pv $p "content")) }
+                    "dingtalk_report" {
+                        $rc = Pv $p "content"
+                        $contentsArr = @(@{ key = "工作内容"; sort = "0"; content = $rc; contentType = "markdown"; type = "1" })
+                        $contentsJson = ConvertTo-Json $contentsArr -Compress
+                        $args = @("report", "entry", "submit", "--template-id", (Pv $p "template"), "--contents", $contentsJson)
+                    }
+                    "dingtalk_group" { $args = @("chat", "group", "create", "--name", (Pv $p "name"), "--users", (Pv $p "users")) }
+                    "dingtalk_aitable" { $args = @("aitable", "create", "--name", (Pv $p "name")) }
+                    default { $args = $null }
+                }
+                if (-not $args) { throw "Unsupported action type: $type" }
+                if (-not $affairsLiveExecute) { $args += "--dry-run" }
+                else { $args += "-y" }
+                $args += @("--format", "json")
+                $res = Invoke-DwsJson $args
+                $cmdDisplay = "dws " + (($args | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join " ")
+                $message = @{ success = ($res.ExitCode -eq 0); dryRun = (-not $affairsLiveExecute); output = [string]$res.Body; command = $cmdDisplay; exitCode = $res.ExitCode } | ConvertTo-Json -Depth 5 -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            } catch {
+                Write-ServerLog "affairs-action exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
         if ($requestPath -like "/sync-emails*") {
             try {
                 $startTime = Get-QueryValue $requestPath "start"
