@@ -276,6 +276,13 @@ function Get-AnalyticsDir {
     return @{ Dir = $dir; Files = $filesDir }
 }
 
+function Get-TaskArchiveDir {
+    $dir = Join-Path $dataDir "task-archive"
+    $entries = Join-Path $dir "entries"
+    if (-not [System.IO.Directory]::Exists($entries)) { [void][System.IO.Directory]::CreateDirectory($entries) }
+    return @{ Dir = $dir; Entries = $entries }
+}
+
 function Start-AnalyticsParse {
     param([string] $Cat)
     $node = (Get-Command node -ErrorAction SilentlyContinue).Source
@@ -933,6 +940,115 @@ while ($true) {
                 $sp = Join-Path $info.Dir "_smart.json"
                 $body = if ([System.IO.File]::Exists($sp)) { [System.IO.File]::ReadAllText($sp, [Text.Encoding]::UTF8) } else { '{}' }
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/task-archive" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $id = Get-SafeFileName ([string]$payload.id)
+                if ([string]::IsNullOrWhiteSpace($id)) { throw "Missing archive id." }
+                $info = Get-TaskArchiveDir
+                $utf8 = New-Object System.Text.UTF8Encoding($false)
+                $recJson = $payload.record | ConvertTo-Json -Depth 12 -Compress
+                [System.IO.File]::WriteAllText((Join-Path $info.Entries ($id + ".json")), $recJson, $utf8)
+                [System.IO.File]::WriteAllText((Join-Path $info.Entries ($id + ".md")), ([string]$payload.markdown), $utf8)
+                $idxObj = @{ id = $id; title = [string]$payload.title; expert = [string]$payload.expert; at = [string]$payload.at; source = [string]$payload.source; linkKind = [string]$payload.linkKind; linkId = [string]$payload.linkId }
+                $idxLine = $idxObj | ConvertTo-Json -Compress
+                $indexPath = Join-Path $info.Dir "_index.jsonl"
+                if ([System.IO.File]::Exists($indexPath)) {
+                    $kept = New-Object System.Collections.Generic.List[string]
+                    foreach ($line in [System.IO.File]::ReadLines($indexPath, [Text.Encoding]::UTF8)) {
+                        if (-not [string]::IsNullOrWhiteSpace($line) -and ($line -notmatch ('"id":"' + [regex]::Escape($id) + '"'))) { $kept.Add($line) }
+                    }
+                    $kept.Add($idxLine)
+                    [System.IO.File]::WriteAllText($indexPath, (($kept -join "`n") + "`n"), $utf8)
+                } else {
+                    [System.IO.File]::WriteAllText($indexPath, ($idxLine + "`n"), $utf8)
+                }
+                $vault = [string]$payload.obsidianVault
+                if (-not [string]::IsNullOrWhiteSpace($vault) -and [System.IO.Directory]::Exists($vault)) {
+                    try {
+                        $odir = Join-Path $vault "工作存档"
+                        if (-not [System.IO.Directory]::Exists($odir)) { [void][System.IO.Directory]::CreateDirectory($odir) }
+                        $datePart = [string]$payload.at
+                        if ($datePart.Length -ge 10) { $datePart = $datePart.Substring(0, 10) }
+                        $ofname = Get-SafeFileName ($datePart + "-" + [string]$payload.title)
+                        if ($ofname -notmatch '\.md$') { $ofname = $ofname + ".md" }
+                        [System.IO.File]::WriteAllText((Join-Path $odir $ofname), ([string]$payload.markdown), $utf8)
+                    } catch { Write-ServerLog "task-archive obsidian write failed: $($_.Exception.Message)" }
+                }
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"success":true}'))
+            } catch {
+                Write-ServerLog "task-archive exception: $($_.Exception.Message)"
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/task-archive-list*") {
+            try {
+                $info = Get-TaskArchiveDir
+                $indexPath = Join-Path $info.Dir "_index.jsonl"
+                $page = 0; [int]::TryParse((Get-QueryValue $requestPath "page"), [ref]$page) | Out-Null; if ($page -lt 1) { $page = 1 }
+                $size = 0; [int]::TryParse((Get-QueryValue $requestPath "size"), [ref]$size) | Out-Null; if ($size -lt 1) { $size = 15 }; if ($size -gt 100) { $size = 100 }
+                $q = Get-QueryValue $requestPath "q"
+                $all = New-Object System.Collections.Generic.List[string]
+                if ([System.IO.File]::Exists($indexPath)) {
+                    foreach ($line in [System.IO.File]::ReadLines($indexPath, [Text.Encoding]::UTF8)) {
+                        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                        if ($q -and ($line.IndexOf($q, [System.StringComparison]::OrdinalIgnoreCase) -lt 0)) { continue }
+                        $all.Add($line)
+                    }
+                }
+                $all.Reverse()
+                $total = $all.Count; $startIdx = ($page - 1) * $size
+                $rows = New-Object System.Collections.Generic.List[string]
+                for ($i = $startIdx; $i -lt [Math]::Min($startIdx + $size, $total); $i++) { $rows.Add($all[$i]) }
+                $body = '{"total":' + $total + ',"page":' + $page + ',"size":' + $size + ',"items":[' + ($rows -join ',') + ']}'
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/task-archive-item*") {
+            try {
+                $info = Get-TaskArchiveDir
+                $id = Get-SafeFileName (Get-QueryValue $requestPath "id")
+                $fp = Join-Path $info.Entries ($id + ".json")
+                $body = if ([System.IO.File]::Exists($fp)) { [System.IO.File]::ReadAllText($fp, [Text.Encoding]::UTF8) } else { '{}' }
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/task-archive-delete" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $id = Get-SafeFileName ([string]$payload.id)
+                $info = Get-TaskArchiveDir
+                foreach ($ext in @(".json", ".md")) { $fp = Join-Path $info.Entries ($id + $ext); if ([System.IO.File]::Exists($fp)) { [System.IO.File]::Delete($fp) } }
+                $indexPath = Join-Path $info.Dir "_index.jsonl"
+                if ([System.IO.File]::Exists($indexPath)) {
+                    $kept = New-Object System.Collections.Generic.List[string]
+                    foreach ($line in [System.IO.File]::ReadLines($indexPath, [Text.Encoding]::UTF8)) {
+                        if (-not [string]::IsNullOrWhiteSpace($line) -and ($line -notmatch ('"id":"' + [regex]::Escape($id) + '"'))) { $kept.Add($line) }
+                    }
+                    $tail = if ($kept.Count) { "`n" } else { "" }
+                    [System.IO.File]::WriteAllText($indexPath, (($kept -join "`n") + $tail), (New-Object System.Text.UTF8Encoding($false)))
+                }
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"success":true}'))
             } catch {
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
