@@ -26,12 +26,29 @@ function log(...a) {
 }
 const TD = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-// 稳定去重 key：优先用业务编号(bizId)，否则取 detail 中较长数字串(单号/工号)作指纹，再退化为标题；不依赖大模型每次的措辞
+// 标题归一化：去掉“X月/X月份”前缀、括号、空格与标点，使“国际交付三部配额下发”与“6月【国际交付三部】配额下发”归并为同一指纹
+function oaNormTitle(t) { return String(t || '').replace(/^\d{1,2}月份?/, '').replace(/[【】\[\]（）()·\s:：;；,，。.、_\-—!！?？*]/g, ''); }
+// 稳定去重 key：优先 bizId → 业务单号(申请单号/事务单号/工单号等) → 归一化标题(+下发/起始周期)。
+// 不再用 detail 里的金额数字串作指纹——金额与排版每次抓取会变，会导致同一事项算出不同 key 而重复生成。
 function oaKey(b) {
   const it = b.it || {};
+  const cat = String(b.cat || '');
   let sig = String(it.bizId || '').replace(/[^0-9A-Za-z]/g, '');
-  if (!sig) { const nums = (String(it.detail || '').match(/\d{4,}/g) || []).join('-'); sig = nums || String(it.title || '').replace(/\s+/g, ''); }
-  return ('oa|' + b.cat + '|' + sig).toLowerCase();
+  if (!sig) {
+    const blob = String(it.detail || '') + ' ' + String(it.title || '');
+    const m = blob.match(/(?:申请单号|事务单号|工单号|流程单号|审批单号|单号|编号)\s*[：:]\s*([A-Za-z0-9]{4,})/);
+    if (m) sig = m[1];
+  }
+  if (!sig) {
+    const t = oaNormTitle(it.title || cat);
+    let period = '';
+    const blob = String(it.detail || '') + ' ' + String(it.title || '');
+    const pm = blob.match(/\d{1,2}月\d{1,2}日\s*[-~至到]\s*\d{1,2}月?\d{1,2}日/);
+    if (pm) period = pm[0].replace(/[^0-9]/g, '');
+    else { const ym = String(it.startDate || '').match(/^(\d{4})-(\d{2})/); if (ym) period = ym[1] + ym[2]; }
+    sig = t + (period ? ('@' + period) : '');
+  }
+  return ('oa|' + cat + '|' + sig).toLowerCase();
 }
 
 async function writeStatus(ok, message, analyzed) {
@@ -155,14 +172,20 @@ async function main() {
   const currKeys = new Set(curr.map(x => x.key));
   let sugs = fresh.settings['_aiSugs'] || [];
   const beforeLen = sugs.length;
-  // 清理：鲸+ 且仍未处理(pending)、但本次 OA 已不存在的 → 删除；已采纳/已忽略一律保留
-  sugs = sugs.filter(s => !(s.sourceKind === 'oa' && s.state === 'pending' && !currKeys.has(s.key)));
+  // 已采纳/完成/归档为任务的鲸+事项：用 task.originKey(精确) + 归一化标题(后备，兼容历史无 originKey 的任务) 双重判定，
+  // 避免“已放入任务跟踪，又重复出现在智能分析”。标题先去掉“工号姓名 · ”前缀再归一化。
+  const handledTasks = (fresh.tasks || []).filter(t => t && (t.status === 'active' || t.status === 'completed' || t.status === 'archived'));
+  const taskKeys = new Set(handledTasks.filter(t => t.originKey).map(t => t.originKey));
+  const taskTitles = new Set(handledTasks.map(t => oaNormTitle(String(t.title || '').replace(/^.*?·\s*/, ''))).filter(Boolean));
+  const isHandled = (key, title) => taskKeys.has(key) || taskTitles.has(oaNormTitle(String(title || '').replace(/^.*?·\s*/, '')));
+  // 清理鲸+未处理(pending)建议：本次 OA 已不存在的，或已被采纳/完成/归档为任务的 → 删除；已采纳/已忽略状态的建议本身保留
+  sugs = sugs.filter(s => !(s.sourceKind === 'oa' && s.state === 'pending' && (!currKeys.has(s.key) || isHandled(s.key, s.title))));
   const removed = beforeLen - sugs.length;
   // 已存在的 key（无论 pending/已采纳/已忽略）→ 不重复新增
   const existing = new Set(sugs.filter(s => s.sourceKind === 'oa').map(s => s.key));
   let added = 0; const today = TD();
   for (const x of curr) {
-    if (existing.has(x.key)) continue;
+    if (existing.has(x.key) || isHandled(x.key, (x.b.it && x.b.it.title) || '')) continue;
     existing.add(x.key);
     const b = x.b, it = b.it;
     const title = String(it.title || b.cat).slice(0, 60);
