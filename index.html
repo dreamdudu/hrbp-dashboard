@@ -2385,12 +2385,7 @@ body.dark .an-bar-track,body.dark .an-seg{background:rgba(121,216,232,.1)}
 .af-tab{border:none;background:none;cursor:pointer;font-size:14px;font-weight:600;color:var(--slate-500);padding:8px 14px;border-radius:8px 8px 0 0;border-bottom:2px solid transparent;margin-bottom:-1px}
 .af-tab.active{color:var(--navy-700);border-bottom-color:var(--navy-700)}
 .af-tab:hover{color:var(--navy-700)}
-.af-wrap{max-width:1320px}
-.af-main{display:grid;grid-template-columns:minmax(0,460px) minmax(0,1fr);gap:18px;align-items:start}
-.af-col-left,.af-col-right{min-width:0;display:flex;flex-direction:column;gap:14px}
-.af-col-left .af-section,.af-col-right .af-section{margin-bottom:0}
-.af-col-right{position:sticky;top:8px}
-@media(max-width:1080px){.af-main{grid-template-columns:1fr}.af-col-right{position:static}}
+.af-wrap{max-width:none}
 .af-section{background:#fff;border:1px solid var(--slate-100);border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.05);margin-bottom:14px}
 .af-sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;font-size:14px;font-weight:700;color:var(--slate-700)}
 .af-hint{font-size:12px;color:var(--slate-400);font-weight:400}
@@ -2463,55 +2458,46 @@ body.dark .af-btn{background:rgba(8,20,29,.6);border-color:rgba(121,216,232,.18)
                         <div class="af-sec-head"><span>未完成的处理 <span class="af-hint">上次未完成的处理已自动保存，可点「继续」接着处理</span></span></div>
                         <div id="af-drafts"></div>
                     </div>
-                    <div class="af-main">
-                        <div class="af-col-left">
-                            <div class="af-section">
-                                <div class="af-sec-head"><span>① 选择专家 <span class="af-hint">不同专家有不同的能力与提示词，会随你的使用自动进化</span></span><button class="af-link-btn" onclick="afOpenExpertMgr()">⚙ 管理专家</button></div>
-                                <div id="af-experts" class="af-experts"></div>
-                            </div>
-                            <div class="af-section">
-                                <div class="af-sec-head"><span>② 任务来源</span></div>
-                                <div class="af-source">
-                                    <label><input type="radio" name="af-src" value="linked" checked onchange="afOnSourceChange()"> 关联未完成的待办 / 日程</label>
-                                    <label><input type="radio" name="af-src" value="temp" onchange="afOnSourceChange()"> 临时任务</label>
-                                </div>
-                                <div id="af-linked-wrap" style="margin-top:10px">
-                                    <select id="af-linked" class="af-input" onchange="afPickLinked(this.value)"></select>
-                                </div>
-                                <div style="margin-top:10px"><input id="af-title" class="af-input" placeholder="任务标题"></div>
-                                <div style="margin-top:10px"><textarea id="af-input" class="af-input" rows="5" placeholder="任务内容 / 要求：希望专家帮你做什么、目标、背景、约束条件等"></textarea></div>
-                                <div style="margin-top:10px"><textarea id="af-material" class="af-input" rows="3" placeholder="补充材料（可选）：相关文本、数据、要点……"></textarea></div>
-                                <div style="margin-top:8px">
-                                    <label class="af-btn" style="display:inline-flex"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-file"></use></svg> 添加附件<input type="file" id="af-files" multiple style="display:none" onchange="afAddFiles(event)"></label>
-                                    <span class="af-hint" style="margin-left:8px">可添加多个；txt/md/csv/json/docx/xlsx/pptx 会自动读取内容</span>
-                                    <div id="af-att-list" style="margin-top:8px"></div>
-                                </div>
-                                <div style="margin-top:12px"><button class="af-btn primary" id="af-go" onclick="afProcess()" style="width:100%;justify-content:center"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-spark"></use></svg> 让专家处理</button></div>
-                            </div>
+                    <div class="af-section">
+                        <div class="af-sec-head"><span>① 选择专家 <span class="af-hint">不同专家有不同的能力与提示词，会随你的使用自动进化</span></span><button class="af-link-btn" onclick="afOpenExpertMgr()">⚙ 管理专家</button></div>
+                        <div id="af-experts" class="af-experts"></div>
+                    </div>
+                    <div class="af-section">
+                        <div class="af-sec-head"><span>② 任务来源</span></div>
+                        <div class="af-source">
+                            <label><input type="radio" name="af-src" value="linked" checked onchange="afOnSourceChange()"> 关联未完成的待办 / 日程</label>
+                            <label><input type="radio" name="af-src" value="temp" onchange="afOnSourceChange()"> 临时任务</label>
                         </div>
-                        <div class="af-col-right">
-                            <div id="af-result-wrap" class="af-section">
-                                <div class="af-sec-head"><span>③ 处理过程 <span class="af-hint">多轮对话，可持续追问、补充、修改</span></span><span id="af-result-expert" class="af-hint"></span></div>
-                                <div id="af-result-empty" class="af-empty">填写左侧任务并点「让专家处理」，处理过程与结果会显示在这里。<br>未完成也会自动保存为草稿，可随时回来继续。</div>
-                                <div id="af-result-body" style="display:none">
-                                    <div id="af-thread" class="af-thread"></div>
-                                    <div id="af-result-edit" style="display:none"><textarea id="af-result-text" class="af-input" rows="14"></textarea></div>
-                                    <div style="margin-top:12px">
-                                        <label class="af-btn af-btn-sm" style="display:inline-flex"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-file"></use></svg> 添加附件<input type="file" id="af-fb-files" multiple style="display:none" onchange="afAddFbFiles(event)"></label>
-                                        <span class="af-hint" style="margin-left:8px">本轮随消息一起发给专家</span>
-                                        <div id="af-fb-att-list" style="margin-top:6px"></div>
-                                    </div>
-                                    <div class="af-feedback">
-                                        <input id="af-fb" class="af-input" placeholder="继续对话：追问、补充要求，或让专家修改当前结果…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();afSend();}">
-                                        <button class="af-btn" id="af-send" onclick="afSend()">发送 ➤</button>
-                                    </div>
-                                    <div class="af-actions">
-                                        <button class="af-btn" onclick="afCancelProcess()" style="margin-right:auto;color:var(--rose-500)">✕ 取消处理</button>
-                                        <button class="af-btn" onclick="afToggleEdit()">✎ 编辑当前结果</button>
-                                        <button class="af-btn primary" onclick="afFinish()">✓ 完成并存档</button>
-                                    </div>
-                                </div>
-                            </div>
+                        <div id="af-linked-wrap" style="margin-top:10px">
+                            <select id="af-linked" class="af-input" onchange="afPickLinked(this.value)"></select>
+                        </div>
+                        <div style="margin-top:10px"><input id="af-title" class="af-input" placeholder="任务标题"></div>
+                        <div style="margin-top:10px"><textarea id="af-input" class="af-input" rows="4" placeholder="任务内容 / 要求：希望专家帮你做什么、目标、背景、约束条件等"></textarea></div>
+                        <div style="margin-top:10px"><textarea id="af-material" class="af-input" rows="3" placeholder="补充材料（可选）：相关文本、数据、要点……"></textarea></div>
+                        <div style="margin-top:8px">
+                            <label class="af-btn" style="display:inline-flex"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-file"></use></svg> 添加附件<input type="file" id="af-files" multiple style="display:none" onchange="afAddFiles(event)"></label>
+                            <span class="af-hint" style="margin-left:8px">可添加多个；txt/md/csv/json/docx/xlsx/pptx 会自动读取内容作为材料</span>
+                            <div id="af-att-list" style="margin-top:8px"></div>
+                        </div>
+                        <div style="margin-top:12px"><button class="af-btn primary" id="af-go" onclick="afProcess()"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-spark"></use></svg> 让专家处理</button></div>
+                    </div>
+                    <div id="af-result-wrap" class="af-section" style="display:none">
+                        <div class="af-sec-head"><span>③ 处理过程 <span class="af-hint">多轮对话，可持续追问、补充、修改</span></span><span id="af-result-expert" class="af-hint"></span></div>
+                        <div id="af-thread" class="af-thread"></div>
+                        <div id="af-result-edit" style="display:none"><textarea id="af-result-text" class="af-input" rows="14"></textarea></div>
+                        <div style="margin-top:12px">
+                            <label class="af-btn af-btn-sm" style="display:inline-flex"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-file"></use></svg> 添加附件<input type="file" id="af-fb-files" multiple style="display:none" onchange="afAddFbFiles(event)"></label>
+                            <span class="af-hint" style="margin-left:8px">本轮随消息一起发给专家</span>
+                            <div id="af-fb-att-list" style="margin-top:6px"></div>
+                        </div>
+                        <div class="af-feedback">
+                            <input id="af-fb" class="af-input" placeholder="继续对话：追问、补充要求，或让专家修改当前结果…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();afSend();}">
+                            <button class="af-btn" id="af-send" onclick="afSend()">发送 ➤</button>
+                        </div>
+                        <div class="af-actions">
+                            <button class="af-btn" onclick="afCancelProcess()" style="margin-right:auto;color:var(--rose-500)">✕ 取消处理</button>
+                            <button class="af-btn" onclick="afToggleEdit()">✎ 编辑当前结果</button>
+                            <button class="af-btn primary" onclick="afFinish()">✓ 完成并存档</button>
                         </div>
                     </div>
                 </div>
@@ -5162,16 +5148,15 @@ function afPickLinked(value){if(!value){AF_LINK=null;return;}var ci=value.indexO
 async function afStartFromLink(kind,id){switchTo("affairs");afSwitchTab("process");await renderAffairs();var r=document.querySelector("input[name=af-src][value=linked]");if(r)r.checked=true;afOnSourceChange();var sel=document.getElementById("af-linked");if(sel){sel.value=kind+":"+id;afPickLinked(sel.value);}var el=document.getElementById("af-title");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});}
 async function afProcess(){if(AF_RUNNING)return;if(!llmConfigured()){T("请先在「设置」中配置大模型","w");return;}var expert=afCurrentExpert();if(!expert){T("请先选择一个专家","w");return;}if(AF_ATTS.some(function(a){return a.status==="pending";})){T("附件正在读取，请稍候…","w");return;}var title=afVal("af-title").trim(),input=afVal("af-input").trim(),material=afVal("af-material").trim();if(!title&&!input){T("请填写任务标题或内容","w");return;}var src=afSourceMode();var attText=AF_ATTS.map(function(a){return (a.status==="done"&&a.text)?("【附件："+a.name+"】\n"+a.text):("【附件："+a.name+"（未自动读取内容）】");}).join("\n\n");var attMeta=AF_ATTS.map(function(a){return {name:a.name,size:a.size,chars:a.chars||0,status:a.status};});AF_SESSION={id:ID(),createdAt:new Date().toISOString(),expertId:expert.id,expertName:expert.name,expertEmoji:expert.emoji,source:src,linkKind:(src==="linked"&&AF_LINK?AF_LINK.kind:""),linkId:(src==="linked"&&AF_LINK?AF_LINK.id:""),title:title,input:input,material:material,attachments:attMeta,rounds:[],messages:[]};var matBlock=[material,attText].filter(Boolean).join("\n\n");var userMsg="任务标题："+(title||"(未填)")+"\n\n任务要求：\n"+(input||title)+(matBlock?"\n\n补充材料：\n"+matBlock:"");var dispInput="任务："+(title||input||"")+(matBlock?("\n（含补充材料"+(attMeta.length?"、"+attMeta.length+" 个附件":"")+"）"):"");var messages=[{role:"system",content:expert.prompt+"\n\n（今天是"+TD()+"。请用中文输出，条理清晰、可直接使用。）"+afCapabilitiesPrompt()},{role:"user",content:userMsg}];AF_RUNNING=true;var btn=document.getElementById("af-go"),oldT=btn?btn.innerHTML:"";if(btn){btn.disabled=true;btn.textContent="专家处理中…";}try{var out=await afCallLLM(messages,6000);var pa=afParseActions(out);if(!pa.text&&(!pa.actions||!pa.actions.length))pa.text=String(out||"").trim();if(!pa.text){T("专家未返回有效内容（可能模型思考占满额度或超时），请重试或精简任务内容","w");}else{messages.push({role:"assistant",content:out});AF_SESSION.messages=messages;AF_SESSION.firstOutput=pa.text;AF_SESSION.result=pa.text;AF_SESSION.rounds.push({at:new Date().toISOString(),kind:"process",input:dispInput,output:pa.text,actions:pa.actions});afRenderThread();}}catch(e){var em=(e&&e.message)?e.message:String(e);if(/abort|timed out|timeout|signal/i.test(em))em="处理超时（大模型响应过慢，已等待180秒），请重试";T("处理失败："+em,"w");}finally{AF_RUNNING=false;if(btn){btn.disabled=false;btn.innerHTML=oldT;}}}
 async function afSend(){if(AF_RUNNING||!AF_SESSION)return;var fb=afVal("af-fb").trim();if(AF_FB_ATTS.some(function(a){return a.status==="pending";})){T("附件正在读取，请稍候…","w");return;}if(!fb&&!AF_FB_ATTS.length){T("请输入内容或添加附件","w");return;}if(!llmConfigured())return;AF_RUNNING=true;var btn=document.getElementById("af-send"),oldT=btn?btn.textContent:"";if(btn){btn.disabled=true;btn.textContent="…";}var attText=AF_FB_ATTS.map(function(a){return (a.status==="done"&&a.text)?("【附件："+a.name+"】\n"+a.text):("【附件："+a.name+"（未自动读取内容）】");}).join("\n\n");var attMeta=AF_FB_ATTS.map(function(a){return {name:a.name,size:a.size,chars:a.chars||0,status:a.status};});var sendMsg=[fb,attText].filter(Boolean).join("\n\n");var dispInput=(fb||"（仅附件）")+(attMeta.length?("  📎 "+attMeta.length+" 个附件"):"");try{afCaptureEdit();AF_SESSION.messages.push({role:"user",content:sendMsg});var out=await afCallLLM(AF_SESSION.messages,6000);var pa=afParseActions(out);if(!pa.text&&(!pa.actions||!pa.actions.length))pa.text=String(out||"").trim();if(!pa.text){AF_SESSION.messages.pop();T("专家未返回有效内容，请重试","w");}else{AF_SESSION.messages.push({role:"assistant",content:out});AF_SESSION.result=pa.text;AF_SESSION.rounds.push({at:new Date().toISOString(),kind:"user",input:dispInput,attachments:attMeta,output:pa.text,actions:pa.actions});var fbEl=document.getElementById("af-fb");if(fbEl)fbEl.value="";AF_FB_ATTS=[];afRenderFbAtts();afRenderThread();}}catch(e){var em=(e&&e.message)?e.message:String(e);if(/abort|timed out|timeout|signal/i.test(em))em="处理超时，请重试";T("发送失败："+em,"w");}finally{AF_RUNNING=false;if(btn){btn.disabled=false;btn.textContent=oldT;}}}
-function afShowResult(show){var b=document.getElementById("af-result-body"),e=document.getElementById("af-result-empty");if(b)b.style.display=show?"":"none";if(e)e.style.display=show?"none":"";}
 function afCancelProcess(){if(!AF_SESSION)return;if(!confirm("取消本次处理？未完成的草稿将被删除（已存档的不受影响）。"))return;var id=AF_SESSION.id;afResetProcess();afDeleteDraft(id);afRenderDraftList();T("已取消处理并删除草稿","i");}
-function afRenderThread(){if(!AF_SESSION)return;afShowResult(true);var w=document.getElementById("af-result-wrap");var ex=document.getElementById("af-result-expert");if(ex)ex.textContent=(AF_SESSION.expertEmoji||"")+" "+AF_SESSION.expertName+" · "+AF_SESSION.rounds.length+" 轮对话";var t=document.getElementById("af-thread");if(t){t.innerHTML=AF_SESSION.rounds.map(function(rd,ri){var userHtml=(rd.input?"<div class='af-turn-user'>"+ESC(rd.input)+"</div>":"");var acts=(rd.actions&&rd.actions.length)?("<div class='af-turn-acts'>"+rd.actions.map(function(a,ai){return "<button class='af-btn af-btn-sm' onclick='afOpenActionModal("+ri+","+ai+")' title='"+ESC_ATTR(a.summary||"")+"'>"+afActionIcon(a.type)+" "+ESC(a.label||a.type)+"</button>";}).join("")+"</div>"):"";return userHtml+"<div class='af-turn-ai'>"+anMarkdown(rd.output)+acts+"</div>";}).join("");t.style.display="";t.scrollTop=t.scrollHeight;}var ed=document.getElementById("af-result-edit");if(ed)ed.style.display="none";if(w)w.scrollIntoView({behavior:"smooth",block:"nearest"});afPersistDraft();}
+function afRenderThread(){if(!AF_SESSION)return;var w=document.getElementById("af-result-wrap");if(w)w.style.display="";var ex=document.getElementById("af-result-expert");if(ex)ex.textContent=(AF_SESSION.expertEmoji||"")+" "+AF_SESSION.expertName+" · "+AF_SESSION.rounds.length+" 轮对话";var t=document.getElementById("af-thread");if(t){t.innerHTML=AF_SESSION.rounds.map(function(rd,ri){var userHtml=(rd.input?"<div class='af-turn-user'>"+ESC(rd.input)+"</div>":"");var acts=(rd.actions&&rd.actions.length)?("<div class='af-turn-acts'>"+rd.actions.map(function(a,ai){return "<button class='af-btn af-btn-sm' onclick='afOpenActionModal("+ri+","+ai+")' title='"+ESC_ATTR(a.summary||"")+"'>"+afActionIcon(a.type)+" "+ESC(a.label||a.type)+"</button>";}).join("")+"</div>"):"";return userHtml+"<div class='af-turn-ai'>"+anMarkdown(rd.output)+acts+"</div>";}).join("");t.style.display="";t.scrollTop=t.scrollHeight;}var ed=document.getElementById("af-result-edit");if(ed)ed.style.display="none";if(w)w.scrollIntoView({behavior:"smooth",block:"nearest"});afPersistDraft();}
 function afCaptureEdit(){if(!AF_SESSION)return;var ed=document.getElementById("af-result-edit");if(ed&&ed.style.display!=="none"){var v=afVal("af-result-text");AF_SESSION.result=v;AF_SESSION.finalResult=v;if(AF_SESSION.rounds.length)AF_SESSION.rounds[AF_SESSION.rounds.length-1].output=v;}}
 function afToggleEdit(){if(!AF_SESSION)return;var ed=document.getElementById("af-result-edit"),th=document.getElementById("af-thread");if(ed.style.display==="none"){document.getElementById("af-result-text").value=AF_SESSION.result||"";ed.style.display="";if(th)th.style.display="none";}else{afCaptureEdit();ed.style.display="none";if(th)th.style.display="";afRenderThread();}}
 function afBuildArchiveMd(s){var L=[];L.push("# "+(s.title||"未命名任务"));L.push("");L.push("- 专家："+(s.expertEmoji||"")+" "+s.expertName);L.push("- 处理时间："+fmtMinute(s.archivedAt||s.createdAt));L.push("- 来源："+(s.source==="linked"?("关联"+(s.linkKind==="task"?"待办":"日程")):"临时任务"));L.push("");L.push("## 任务要求");L.push(s.input||s.title||"");if(s.material){L.push("");L.push("## 补充材料");L.push(s.material);}if(s.attachments&&s.attachments.length){L.push("");L.push("## 补充附件");s.attachments.forEach(function(a){L.push("- "+a.name+(a.chars?"（已读取 "+a.chars+" 字）":(a.status==="unsupported"?"（未自动读取）":"")));});}L.push("");L.push("## 处理结果");L.push(s.result||"");if(s.rounds&&s.rounds.length>1){L.push("");L.push("## 处理过程（"+s.rounds.length+" 轮对话）");s.rounds.forEach(function(r,i){L.push("### 第 "+(i+1)+" 轮 "+(r.kind==="process"?"（初版）":"（追问："+(r.input||"")+"）"));L.push(r.output||"");});}return L.join("\n");}
 function afSessionHandling(s){return {archiveId:s.id,expertName:s.expertName,expertEmoji:s.expertEmoji,at:s.archivedAt||s.createdAt,title:s.title,input:s.input,result:s.result,rounds:(s.rounds||[]).length};}
 async function afWriteArchive(s){var md=afBuildArchiveMd(s);try{var r=await fetch("/task-archive",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:s.id,title:s.title||"未命名任务",expert:(s.expertEmoji||"")+" "+s.expertName,at:s.archivedAt||s.createdAt,source:s.source,linkKind:s.linkKind||"",linkId:s.linkId||"",markdown:md,record:s,obsidianVault:LS("obsidian_vault")||""})});var d=await r.json().catch(function(){return{};});if(!r.ok||!d.success)throw new Error((d&&d.error)||("HTTP "+r.status));return true;}catch(e){T("存档写入失败："+(e&&e.message?e.message:e),"w");return false;}}
 async function afFinish(){if(!AF_SESSION)return;afCaptureEdit();AF_SESSION.finalResult=AF_SESSION.result;var s=AF_SESSION;s.archivedAt=new Date().toISOString();s.status="archived";var ok=await afWriteArchive(s);if(!ok)return;afDeleteDraft(s.id);var expert=afExpertById(s.expertId);if(expert)afEvolveExpert(expert,s);if(s.source==="linked"&&s.linkId){var handling=afSessionHandling(s);if(s.linkKind==="task"){var t=await G(s.linkId);if(t){t.handlings=t.handlings||[];t.handlings.push(handling);await PT(t);await LOAD();}}else if(s.linkKind==="cal"){var items=getCalItems();var c=items.find(function(x){return x.id===s.linkId;});if(c){c.handlings=c.handlings||[];c.handlings.push(handling);saveCalItems(items);refreshCalendarSurfaces();}}T("已完成处理并存档，结果已记录到对应"+(s.linkKind==="task"?"待办":"日程")+"详情","s");afResetProcess();afSwitchTab("archive");}else{afOpenTempModal(s);}}
-function afResetProcess(){AF_SESSION=null;AF_ATTS=[];AF_FB_ATTS=[];afRenderAtts();afRenderFbAtts();["af-title","af-input","af-material","af-fb","af-result-text"].forEach(function(id){var e=document.getElementById(id);if(e)e.value="";});var th=document.getElementById("af-thread");if(th)th.innerHTML="";afShowResult(false);var sel=document.getElementById("af-linked");if(sel)sel.value="";AF_LINK=null;afRenderDraftList();}
+function afResetProcess(){AF_SESSION=null;AF_ATTS=[];AF_FB_ATTS=[];afRenderAtts();afRenderFbAtts();["af-title","af-input","af-material","af-fb","af-result-text"].forEach(function(id){var e=document.getElementById(id);if(e)e.value="";});var th=document.getElementById("af-thread");if(th)th.innerHTML="";var w=document.getElementById("af-result-wrap");if(w)w.style.display="none";var sel=document.getElementById("af-linked");if(sel)sel.value="";AF_LINK=null;afRenderDraftList();}
 async function afEvolveExpert(expert,s){if(LS("expert_evolve_mode")==="manual")return;if(!llmConfigured())return;try{var sys="你是一名提示词工程专家。下面给出一个办公助手「专家」的当前系统提示词，以及用户最近用它处理的一个真实任务（含任务要求、专家初版输出、用户的反馈过程、用户最终采用的结果）。请据此对该专家的系统提示词做小幅优化，使其更贴合该用户的工作习惯、表达风格与质量要求。要求：保留原有职责定位与角色；只做增量改进（吸收反馈与最终结果中体现出的偏好，如风格、详略、结构、口径），不要推倒重来，不要变更专业领域；篇幅与原提示词相当。只输出完整的新版系统提示词本身，纯文本，不要任何解释、引号或代码块。";var fbLog=(s.rounds||[]).filter(function(r){return r.kind!=="process"&&r.input;}).map(function(r){return "- "+r.input;}).join("\n");var usr="【当前系统提示词】\n"+expert.prompt+"\n\n【任务要求】\n"+(s.input||s.title||"")+(s.material?"\n\n【补充材料】\n"+s.material:"")+"\n\n【专家初版输出】\n"+(s.firstOutput||s.result||"")+"\n\n【用户反馈过程】\n"+(fbLog||"（无显式反馈）")+"\n\n【用户最终采用的结果】\n"+(s.finalResult||s.result||"");var np=await afCallLLM([{role:"system",content:sys},{role:"user",content:usr}],2000);np=(np||"").trim().replace(/^```[a-z]*\n?/i,"").replace(/```$/,"").trim();if(np&&np.length>20&&np!==expert.prompt){var experts=afGetExperts(),e=null;for(var i=0;i<experts.length;i++)if(experts[i].id===expert.id){e=experts[i];break;}if(!e)return;e.history=e.history||[];e.history.push({at:new Date().toISOString(),prompt:e.prompt,reason:"任务《"+(s.title||"")+"》后自动进化"});if(e.history.length>20)e.history=e.history.slice(-20);e.prompt=np;e.evolveCount=(e.evolveCount||0)+1;e.updatedAt=new Date().toISOString();afSaveExperts(experts);if(typeof afRenderExperts==="function")afRenderExperts();T("专家「"+e.name+"」已根据本次处理自动进化","i");}}catch(e){}}
 function afOpenTempModal(s){AF_TEMP_SESSION=s;var t=document.getElementById("af-temp-title");if(t)t.value=s.title||"";var p=document.getElementById("af-temp-pri");if(p)p.value="medium";var d=document.getElementById("af-temp-ddl");if(d)d.value=TD();var f=document.getElementById("af-temp-fields");if(f)f.style.display="none";var y=document.getElementById("af-temp-yes");if(y)y.textContent="加入已完成工作";document.getElementById("afTempModal").style.display="flex";}
 function afCloseTempModal(){document.getElementById("afTempModal").style.display="none";}
