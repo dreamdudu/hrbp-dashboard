@@ -796,8 +796,19 @@ while ($true) {
                 $oaScript = Join-Path $scriptDir "oa-sync\oa_silent_sync.js"
                 if (-not $node) { throw "未找到 node，请确认已安装 Node.js" }
                 if (-not [System.IO.File]::Exists($oaScript)) { throw "未找到 oa_silent_sync.js（应位于 ..\oa-sync\）" }
+                # 确保常驻 OA 浏览器(调试端口 9333)已启动；未启动则拉起。node 端会重试连接，无需在此阻塞等待
+                $portUp = $false
+                try { $tc = New-Object System.Net.Sockets.TcpClient; $tc.Connect("127.0.0.1", 9333); $tc.Close(); $portUp = $true } catch { $portUp = $false }
+                if (-not $portUp) {
+                    $edge = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+                    $edgeProfile = Join-Path $scriptDir "oa-sync\edge-profile"
+                    $todoUrl = "https://zmp.iwhalecloud.com/fish-zmp/modules/todoItem/index.jsp"
+                    if ([System.IO.File]::Exists($edge)) {
+                        try { Start-Process -FilePath $edge -ArgumentList '--remote-debugging-port=9333', '--remote-allow-origins=*', ("--user-data-dir=$edgeProfile"), '--new-window', $todoUrl -WindowStyle Minimized } catch {}
+                    }
+                }
                 Start-Process -FilePath $node -ArgumentList ('"' + $oaScript + '"') -WindowStyle Hidden
-                $message = @{ success = $true; started = $true } | ConvertTo-Json -Compress
+                $message = @{ success = $true; started = $true; browserWasUp = $portUp } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             } catch {
                 Write-ServerLog "sync-oa exception: $($_.Exception.Message)"
@@ -1052,6 +1063,37 @@ while ($true) {
             } catch {
                 $message = @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/affairs-extract" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $name = Get-SafeFileName ([string]$payload.name)
+                $b64 = [string]$payload.dataBase64
+                if ([string]::IsNullOrWhiteSpace($name)) { throw "Missing name." }
+                $node = (Get-Command node -ErrorAction SilentlyContinue).Source
+                if (-not $node) { throw "未找到 node，无法解析附件内容" }
+                $script = Join-Path $scriptDir "affairs\extract_text.js"
+                if (-not [System.IO.File]::Exists($script)) { throw "extract_text.js 不存在" }
+                $tmpDir = Join-Path $dataDir "tmp"
+                if (-not [System.IO.Directory]::Exists($tmpDir)) { [void][System.IO.Directory]::CreateDirectory($tmpDir) }
+                $tmp = Join-Path $tmpDir ((Get-Random).ToString() + "_" + $name)
+                [System.IO.File]::WriteAllBytes($tmp, [Convert]::FromBase64String($b64))
+                $si = [System.Diagnostics.ProcessStartInfo]::new()
+                $si.FileName = $node; $si.UseShellExecute = $false; $si.RedirectStandardOutput = $true; $si.RedirectStandardError = $true
+                $si.StandardOutputEncoding = [Text.Encoding]::UTF8; $si.StandardErrorEncoding = [Text.Encoding]::UTF8
+                $si.Arguments = '"' + $script + '" "' + $tmp + '"'
+                $pr = [System.Diagnostics.Process]::new(); $pr.StartInfo = $si; [void]$pr.Start()
+                $out = $pr.StandardOutput.ReadToEnd(); $errOut = $pr.StandardError.ReadToEnd(); $pr.WaitForExit()
+                try { [System.IO.File]::Delete($tmp) } catch {}
+                $body = if ($out.Trim()) { $out } else { (@{ ok = $false; error = $errOut; text = "" } | ConvertTo-Json -Compress) }
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "affairs-extract exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message; text = "" } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
             continue
         }

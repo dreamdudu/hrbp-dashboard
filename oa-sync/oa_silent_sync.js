@@ -52,7 +52,12 @@ let ws, sendRaw; let id = 0; const pend = new Map();
 function send(m, p = {}) { return new Promise((res, rej) => { const i = ++id; pend.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method: m, params: p })); }); }
 
 async function connect() {
-  let list; try { list = await (await fetch(CDP + '/json')).json(); } catch (e) { log('OA browser not running on ' + PORT + ' -> run oa-start.bat'); await writeStatus(false, '常驻 OA 浏览器未运行（请运行 oa-start.bat 或重启看板）'); process.exit(4); }
+  // 常驻浏览器可能正在启动（手动点击时刚被拉起），对 CDP /json 端点重试连接最多约 40 秒，避免“刚启动就误报未运行”
+  let list = null;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try { list = await (await fetch(CDP + '/json')).json(); break; } catch (e) { if (attempt === 0) log('waiting for OA browser CDP on ' + PORT + ' …'); await sleep(2000); }
+  }
+  if (!list) { log('OA browser not running on ' + PORT + ' -> run oa-start.bat'); await writeStatus(false, '常驻 OA 浏览器未运行（请运行 oa-start.bat 或重启看板）'); process.exit(4); }
   const p = list.filter(t => t.type === 'page');
   const pg = p.find(x => (x.url || '').includes('zmp.iwhalecloud.com')) || p.find(x => (x.url || '').includes('iwhalecloud')) || p[0];
   if (!pg) { log('no OA tab'); await writeStatus(false, '未找到 OA 标签页'); process.exit(4); }

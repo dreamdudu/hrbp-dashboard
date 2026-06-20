@@ -9,6 +9,7 @@ data/*.json
 data/backups/
 data/analytics/
 data/task-archive/
+data/tmp/
 attachments/
 oa-sync/edge-profile/
 oa-sync/*.log
