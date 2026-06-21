@@ -1,6 +1,6 @@
-# 鲸+ OA todo background sync loop. Launched by start-dashboard.bat (no Windows Task Scheduler).
-# Reads settings (oa_auto_enabled / oa_sync_interval minutes) from the dashboard state each cycle,
-# ensures the resident OA Edge (debug port 9333) is up, then runs the external oa-sync\oa_silent_sync.js.
+# OA todo background sync loop. Launched by start-dashboard.bat (no Windows Task Scheduler).
+# Runs OA sync only while the board is open (heartbeat). When the board is closed it stops all
+# OA actions and closes the resident OA browser; it resumes automatically when the board reopens.
 $ErrorActionPreference = "SilentlyContinue"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $statePath = Join-Path $scriptDir "data\dashboard-state.json"
@@ -24,7 +24,23 @@ function Test-PortUp([int]$p) {
     try { $c = New-Object System.Net.Sockets.TcpClient; $c.Connect("127.0.0.1", $p); $c.Close(); return $true } catch { return $false }
 }
 
-# 每 60 秒一个 tick：每次都重读设置(开关/周期)，所以在设置里改动后约 1 分钟内即生效
+# Board online: the frontend writes data\.heartbeat every 30s while open; no heartbeat for 120s => board closed.
+function Test-BoardOnline {
+    $hb = Join-Path $scriptDir "data\.heartbeat"
+    if (-not (Test-Path $hb)) { return $false }
+    $raw = Get-Content $hb -Raw -ErrorAction SilentlyContinue
+    if (-not $raw) { return $false }
+    $t = [datetime]::MinValue
+    if (-not [datetime]::TryParse($raw.Trim(), [ref]$t)) { return $false }
+    return (((Get-Date) - $t).TotalSeconds -lt 120)
+}
+
+# Close the resident OA Edge (debug port 9333 + this project's edge-profile) started by the board.
+function Stop-OaEdge {
+    Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*--remote-debugging-port=9333*' -and $_.CommandLine -like '*oa-sync\edge-profile*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
+
+# One tick every 60s; re-reads settings (oa_auto_enabled / oa_sync_interval) each cycle.
 $lastRun = [DateTime]::MinValue
 while ($true) {
     $enabled = $true; $interval = 60
@@ -40,6 +56,8 @@ while ($true) {
     if ($interval -lt 5) { $interval = 5 }
     if ($interval -gt 1440) { $interval = 1440 }
 
+    # Board closed: stop all OA actions and close the OA browser; auto-resume when the board reopens.
+    if (-not (Test-BoardOnline)) { Stop-OaEdge; $lastRun = [DateTime]::MinValue; Start-Sleep -Seconds 60; continue }
     $due = ($lastRun -eq [DateTime]::MinValue) -or (((Get-Date) - $lastRun).TotalSeconds -ge ($interval * 60))
     if ($enabled -and $due -and $node -and [System.IO.File]::Exists($oaScript)) {
         if (-not (Test-PortUp 9333)) {
@@ -51,7 +69,7 @@ while ($true) {
         }
         try { & $node $oaScript | Out-Null } catch {}
         if ($LASTEXITCODE -eq 3) {
-            # 会话过期：用干净启动脚本弹出单个可见登录窗口，提示用户手动登录
+            # Session expired: open a single visible login window for manual re-login.
             try { Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', (Join-Path $scriptDir "oa_open_login.ps1") -WindowStyle Hidden } catch {}
         }
         $lastRun = Get-Date

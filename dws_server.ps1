@@ -755,6 +755,21 @@ while ($true) {
             continue
         }
 
+        if ($requestPath -like "/heartbeat*") {
+            try {
+                $hb = Join-Path $dataDir ".heartbeat"
+                if ((Get-QueryValue $requestPath "off") -eq "1") {
+                    if ([System.IO.File]::Exists($hb)) { [System.IO.File]::Delete($hb) }
+                } else {
+                    [System.IO.File]::WriteAllText($hb, (Get-Date).ToString("o"), (New-Object System.Text.UTF8Encoding($false)))
+                }
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"ok":true}'))
+            } catch {
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"ok":false}'))
+            }
+            continue
+        }
+
         if ($requestPath -eq "/oa-login") {
             try {
                 $loginScript = Join-Path $scriptDir "oa_open_login.ps1"
