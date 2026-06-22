@@ -1443,21 +1443,30 @@ while ($true) {
                 $existing = Read-SkillManifest $dir
                 $now = (Get-Date).ToString("o")
                 function Pg($o, $k, $d) { if ($o -and ($o.PSObject.Properties.Name -contains $k) -and $null -ne $o.$k) { return $o.$k } return $d }
+                # 缺省值回退到已存在的 manifest，避免部分更新(如仅 trusted)清空其它字段
                 $instAt = if ($existing -and $existing.installedAt) { $existing.installedAt } else { $now }
-                $trustDef = if ($existing) { [bool]$existing.trusted } else { $false }
+                if ($existing) {
+                    $dName = $existing.name; $dIcon = $existing.icon; $dDesc = $existing.description; $dTransport = $existing.transport
+                    $dCommand = $existing.command; $dArgs = $existing.args; $dEnv = $existing.env; $dUrl = $existing.url; $dHeaders = $existing.headers
+                    $dTrust = [bool]$existing.trusted; $dSource = $existing.source
+                } else {
+                    $dName = $id; $dIcon = '🔌'; $dDesc = ''; $dTransport = 'stdio'
+                    $dCommand = ''; $dArgs = @(); $dEnv = @{}; $dUrl = ''; $dHeaders = @{}
+                    $dTrust = $false; $dSource = @{ type = 'manual' }
+                }
                 $m = [ordered]@{
                     id          = $id; kind = "mcp"
-                    name        = [string](Pg $p 'name' $id)
-                    icon        = [string](Pg $p 'icon' '🔌')
-                    description = [string](Pg $p 'description' '')
-                    transport   = [string](Pg $p 'transport' 'stdio')
-                    command     = [string](Pg $p 'command' '')
-                    args        = @(Pg $p 'args' @())
-                    env         = (Pg $p 'env' @{})
-                    url         = [string](Pg $p 'url' '')
-                    headers     = (Pg $p 'headers' @{})
-                    trusted     = [bool](Pg $p 'trusted' $trustDef)
-                    source      = (Pg $p 'source' @{ type = 'manual' })
+                    name        = [string](Pg $p 'name' $dName)
+                    icon        = [string](Pg $p 'icon' $dIcon)
+                    description = [string](Pg $p 'description' $dDesc)
+                    transport   = [string](Pg $p 'transport' $dTransport)
+                    command     = [string](Pg $p 'command' $dCommand)
+                    args        = @(Pg $p 'args' $dArgs)
+                    env         = (Pg $p 'env' $dEnv)
+                    url         = [string](Pg $p 'url' $dUrl)
+                    headers     = (Pg $p 'headers' $dHeaders)
+                    trusted     = [bool](Pg $p 'trusted' $dTrust)
+                    source      = (Pg $p 'source' $dSource)
                     installedAt = $instAt; updatedAt = $now
                 }
                 Write-SkillManifest $dir $m
