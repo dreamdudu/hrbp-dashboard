@@ -4725,7 +4725,7 @@ function syncFromDingtalk(options){
         remaining.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),title:evt.title,date:evt.date,start:evt.start||"",end:evt.end||"",notes:evt.notes||"",source:"dingtalk",dingtalkEventId:evt.dingtalkEventId||evt.eventId||evt.id||evt.iCalUID||"",creator:getDingtalkCreator(evt),creatorSource:"dingtalk",createdAt:new Date().toISOString()});
         added++;
       }else{
-        remaining.forEach(function(x){var k=x.date+"|"+x.title+"|"+(x.start||"")+"|"+(x.end||"");if(k===key&&x.source==="dingtalk"){x.dingtalkEventId=evt.dingtalkEventId||evt.eventId||evt.id||evt.iCalUID||x.dingtalkEventId||"";x.creator=getDingtalkCreator(evt);x.creatorSource="dingtalk";}});
+        remaining.forEach(function(x){var k=x.date+"|"+x.title+"|"+(x.start||"")+"|"+(x.end||"");if(k===key&&x.source==="dingtalk"){x.dingtalkEventId=evt.dingtalkEventId||evt.eventId||evt.id||evt.iCalUID||x.dingtalkEventId||"";x.creator=getDingtalkCreator(evt);x.creatorSource="dingtalk";if(evt.notes)x.notes=evt.notes;}});
       }
     });
     saveCalItems(remaining);
@@ -4785,7 +4785,7 @@ function syncFromDingtalk(options){
       var start=parseDateTime(sd),end=parseDateTime(ed);
       var notes=e.description||e.desc||e.notes||e.location||"";
       var eventId=e.id||e.eventId||e.iCalUID||e.uid||"";
-      if(start.date)events.push({title:title,date:start.date,start:start.time,end:end.time,notes:String(notes).split("\n")[0],organizer:e.organizer||e.organizerName||"",eventId:eventId,dingtalkEventId:eventId});
+      if(start.date)events.push({title:title,date:start.date,start:start.time,end:end.time,notes:String(notes).replace(/\r\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim(),organizer:e.organizer||e.organizerName||"",eventId:eventId,dingtalkEventId:eventId});
     });
     return events;
   }
