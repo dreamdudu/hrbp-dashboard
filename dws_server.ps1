@@ -390,7 +390,7 @@ function Install-SkillFromGithub {
     $entry = Guess-SkillEntry $dest
     $now = (Get-Date).ToString("o")
     $manifest = [ordered]@{
-        id = $id; name = $name; icon = "🧩"; description = ""; runtime = "node"; entry = $entry;
+        id = $id; kind = "skill"; name = $name; icon = "🧩"; description = ""; runtime = "node"; entry = $entry;
         inputHint = ""; outputHint = ""; trusted = $false; version = "";
         source = [ordered]@{ type = "github"; repo = $Repo; ref = $okRef; url = "https://github.com/$Repo" };
         installedAt = $now; updatedAt = $now
@@ -398,6 +398,46 @@ function Install-SkillFromGithub {
     Write-SkillManifest $dest $manifest
     $info = Get-SkillRepoInfo $dest
     return @{ id = $id; manifest = $manifest; files = $info.files; skillMd = $info.skillMd; readme = $info.readme; packageJson = $info.packageJson }
+}
+
+# 运行一次性 MCP 客户端(node)，把请求对象经 stdin 传入，返回其 stdout(JSON 字符串)
+function Invoke-McpClient {
+    param($ReqObj, [int] $TimeoutMs = 75000)
+    $node = (Get-Command node -ErrorAction SilentlyContinue).Source
+    if (-not $node) { throw "未找到 node，无法连接 MCP" }
+    $script = Join-Path $scriptDir "mcp\mcp_client.js"
+    if (-not [System.IO.File]::Exists($script)) { throw "mcp_client.js 不存在" }
+    $json = $ReqObj | ConvertTo-Json -Depth 12 -Compress
+    $si = [System.Diagnostics.ProcessStartInfo]::new()
+    $si.FileName = $node; $si.Arguments = '"' + $script + '"'
+    $si.UseShellExecute = $false; $si.RedirectStandardInput = $true; $si.RedirectStandardOutput = $true; $si.RedirectStandardError = $true
+    $si.StandardOutputEncoding = [Text.Encoding]::UTF8; $si.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $pr = [System.Diagnostics.Process]::new(); $pr.StartInfo = $si; [void]$pr.Start()
+    $inBytes = [Text.Encoding]::UTF8.GetBytes($json)
+    $pr.StandardInput.BaseStream.Write($inBytes, 0, $inBytes.Length); $pr.StandardInput.BaseStream.Flush(); $pr.StandardInput.Close()
+    $outTask = $pr.StandardOutput.ReadToEndAsync()
+    $errTask = $pr.StandardError.ReadToEndAsync()
+    if (-not $pr.WaitForExit($TimeoutMs)) { try { $pr.Kill() } catch {}; throw "MCP 连接超时" }
+    $o = $outTask.Result
+    if (-not ($o.Trim())) { throw ("MCP 无输出：" + $errTask.Result) }
+    return $o
+}
+
+# 把 MCP 应用 manifest 转成 mcp_client 的请求基对象(不含 op/tool/arguments)
+function New-McpReqBase {
+    param($M)
+    $transport = if ($M.transport) { [string]$M.transport } else { "stdio" }
+    $req = @{ transport = $transport }
+    if ($transport -eq "http") {
+        $req.url = [string]$M.url
+        if ($M.headers) { $req.headers = $M.headers }
+    }
+    else {
+        $req.command = [string]$M.command
+        $req.args = @($M.args)
+        if ($M.env) { $req.env = $M.env }
+    }
+    return $req
 }
 
 function Start-AnalyticsParse {
@@ -1380,6 +1420,139 @@ while ($true) {
             } catch {
                 Write-ServerLog "skill-run exception: $($_.Exception.Message)"
                 $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/mcp-save" -and $method -eq "POST") {
+            try {
+                $p = $bodyText | ConvertFrom-Json
+                $id = if ($p.PSObject.Properties.Name -contains 'id') { [string]$p.id } else { "" }
+                if (-not $id) {
+                    $baseName = if ($p.name) { [string]$p.name } else { "mcp" }
+                    $clean = (((Get-SafeFileName $baseName) -replace '[^A-Za-z0-9_\-]', '-') -replace '-+', '-').Trim('-')
+                    if (-not $clean) { $clean = [Guid]::NewGuid().ToString('N').Substring(0, 8) }
+                    $id = "mcp-" + $clean
+                    $try = $id; $i = 2
+                    while ([System.IO.Directory]::Exists((Join-Path (Get-SkillsDir) $try))) { $try = $id + "-" + $i; $i++ }
+                    $id = $try
+                }
+                $dir = Resolve-SkillDir $id
+                if (-not [System.IO.Directory]::Exists($dir)) { [void][System.IO.Directory]::CreateDirectory($dir) }
+                $existing = Read-SkillManifest $dir
+                $now = (Get-Date).ToString("o")
+                function Pg($o, $k, $d) { if ($o -and ($o.PSObject.Properties.Name -contains $k) -and $null -ne $o.$k) { return $o.$k } return $d }
+                $instAt = if ($existing -and $existing.installedAt) { $existing.installedAt } else { $now }
+                $trustDef = if ($existing) { [bool]$existing.trusted } else { $false }
+                $m = [ordered]@{
+                    id          = $id; kind = "mcp"
+                    name        = [string](Pg $p 'name' $id)
+                    icon        = [string](Pg $p 'icon' '🔌')
+                    description = [string](Pg $p 'description' '')
+                    transport   = [string](Pg $p 'transport' 'stdio')
+                    command     = [string](Pg $p 'command' '')
+                    args        = @(Pg $p 'args' @())
+                    env         = (Pg $p 'env' @{})
+                    url         = [string](Pg $p 'url' '')
+                    headers     = (Pg $p 'headers' @{})
+                    trusted     = [bool](Pg $p 'trusted' $trustDef)
+                    source      = (Pg $p 'source' @{ type = 'manual' })
+                    installedAt = $instAt; updatedAt = $now
+                }
+                Write-SkillManifest $dir $m
+                $body = @{ ok = $true; manifest = $m } | ConvertTo-Json -Depth 10
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "mcp-save exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/mcp-list-tools" -and $method -eq "POST") {
+            try {
+                $p = $bodyText | ConvertFrom-Json
+                $dir = Resolve-SkillDir ([string]$p.id)
+                $m = Read-SkillManifest $dir
+                if (-not $m) { throw "应用不存在。" }
+                $req = New-McpReqBase $m
+                $req.op = "list"
+                $out = Invoke-McpClient $req
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($out))
+            } catch {
+                Write-ServerLog "mcp-list-tools exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/mcp-call" -and $method -eq "POST") {
+            try {
+                $p = $bodyText | ConvertFrom-Json
+                $dir = Resolve-SkillDir ([string]$p.id)
+                $m = Read-SkillManifest $dir
+                if (-not $m) { throw "应用不存在。" }
+                $confirmed = ($p.PSObject.Properties.Name -contains 'confirmed') -and [bool]$p.confirmed
+                if ((-not ([bool]$m.trusted)) -and (-not $confirmed)) { throw "该 MCP 应用尚未确认信任，请先确认后再运行。" }
+                $req = New-McpReqBase $m
+                $req.op = "call"
+                $req.tool = [string]$p.tool
+                if ($p.PSObject.Properties.Name -contains 'arguments') { $req.arguments = $p.arguments } else { $req.arguments = @{} }
+                $out = Invoke-McpClient $req
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($out))
+            } catch {
+                Write-ServerLog "mcp-call exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/mcp-market-search*") {
+            try {
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                $q = Get-QueryValue $requestPath "q"
+                $base = Get-QueryValue $requestPath "base"
+                if (-not $base) { $base = "https://registry.modelcontextprotocol.io/v0/servers" }
+                $url = $base + "?limit=50"
+                if ($q) { $url = $url + "&search=" + [Uri]::EscapeDataString($q) }
+                $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20
+                $data = $resp.Content | ConvertFrom-Json
+                $servers = @($data.servers)
+                if (-not $servers.Count -and $data.PSObject.Properties.Name -contains 'data') { $servers = @($data.data) }
+                $items = @()
+                foreach ($entry in $servers) {
+                    $s = if ($entry.PSObject.Properties.Name -contains 'server') { $entry.server } else { $entry }
+                    $nm = [string]$s.name
+                    $desc = [string]$s.description
+                    $ver = if ($s.version) { [string]$s.version } else { "" }
+                    $transport = "stdio"; $command = ""; $argsArr = @(); $remoteUrl = ""
+                    $pkgs = @($s.packages)
+                    $remotes = @($s.remotes)
+                    if ($remotes.Count -ge 1 -and $remotes[0].url) {
+                        $transport = "http"; $remoteUrl = [string]$remotes[0].url
+                    }
+                    elseif ($pkgs.Count -ge 1) {
+                        $pk = $pkgs[0]
+                        $rt = if ($pk.registry_type) { [string]$pk.registry_type } else { [string]$pk.registry_name }
+                        $ident = if ($pk.identifier) { [string]$pk.identifier } else { [string]$pk.name }
+                        if ($rt -match 'npm') { $command = "npx"; $argsArr = @("-y", $ident) }
+                        elseif ($rt -match 'pypi|pip') { $command = "uvx"; $argsArr = @($ident) }
+                        elseif ($rt -match 'oci|docker') { $command = "docker"; $argsArr = @("run", "-i", "--rm", $ident) }
+                        else { $command = $ident }
+                    }
+                    if (-not $q -or ($nm -match [regex]::Escape($q)) -or ($desc -match [regex]::Escape($q))) {
+                        $items += @{ name = $nm; description = $desc; version = $ver; transport = $transport; command = $command; args = $argsArr; url = $remoteUrl; source = "registry" }
+                    }
+                }
+                $body = @{ ok = $true; items = @($items) } | ConvertTo-Json -Depth 8
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "mcp-market-search exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message; items = @() } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
             }
             continue
