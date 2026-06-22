@@ -310,7 +310,7 @@ function Write-SkillManifest {
     [System.IO.File]::WriteAllText($mf, $json, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-# 猜测 node 入口：package.json 的 main → index.js → 根目录首个 .js
+# 猜测技能入口：package.json → 常见入口 → scripts 目录 → 首个可执行脚本
 function Guess-SkillEntry {
     param([string] $Dir)
     $pkg = Join-Path $Dir "package.json"
@@ -324,9 +324,13 @@ function Guess-SkillEntry {
             }
         } catch {}
     }
-    foreach ($cand in @("index.js", "main.js", "skill.js", "cli.js")) { if ([System.IO.File]::Exists((Join-Path $Dir $cand))) { return $cand } }
-    $js = [System.IO.Directory]::GetFiles($Dir, "*.js")
-    if ($js.Count -ge 1) { return [System.IO.Path]::GetFileName($js[0]) }
+    foreach ($cand in @("index.js", "main.js", "skill.js", "cli.js", "index.py", "main.py", "skill.py", "cli.py", "main.ps1", "skill.ps1")) {
+        if ([System.IO.File]::Exists((Join-Path $Dir $cand))) { return $cand }
+    }
+    foreach ($ext in @("*.js", "*.mjs", "*.py", "*.ps1")) {
+        $files = [System.IO.Directory]::GetFiles($Dir, $ext, [System.IO.SearchOption]::AllDirectories)
+        if ($files.Count -ge 1) { return $files[0].Substring($Dir.Length).TrimStart('\', '/').Replace('\', '/') }
+    }
     return ""
 }
 
@@ -357,12 +361,13 @@ function Get-SkillRepoInfo {
 }
 
 function Install-SkillFromGithub {
-    param([string] $Repo, [string] $Ref)
+    param([string] $Repo, [string] $Ref, [string] $SkillSlug, [string] $SkillPath)
     if ($Repo -notmatch '^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$') { throw "仓库格式应为 owner/name。" }
     try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
     $parts = $Repo -split '/'
     $owner = $parts[0]; $name = $parts[1]
-    $id = (Get-SafeFileName ($owner + "-" + $name)) -replace '[^A-Za-z0-9_\-]', '-'
+    $idSeed = $owner + "-" + $name + $(if ($SkillSlug) { "-" + $SkillSlug } else { "" })
+    $id = (Get-SafeFileName $idSeed) -replace '[^A-Za-z0-9_\-]', '-'
     $refs = @()
     if ($Ref) { $refs += $Ref }
     $refs += @("main", "master")
@@ -382,7 +387,33 @@ function Install-SkillFromGithub {
     Expand-Archive -Path $zip -DestinationPath $exDir -Force
     try { [System.IO.File]::Delete($zip) } catch {}
     $top = [System.IO.Directory]::GetDirectories($exDir)
-    $srcRoot = if ($top.Count -ge 1) { $top[0] } else { $exDir }
+    $repoRoot = if ($top.Count -ge 1) { $top[0] } else { $exDir }
+    $srcRoot = $repoRoot
+    if ($SkillPath) {
+        $cleanSkillPath = ($SkillPath -replace '\\', '/').Trim('/')
+        if ($cleanSkillPath -match '(^|/)\.\.(/|$)') { throw "技能目录路径无效。" }
+        $candidate = [System.IO.Path]::GetFullPath((Join-Path $repoRoot ($cleanSkillPath -replace '/', [System.IO.Path]::DirectorySeparatorChar)))
+        $repoFull = [System.IO.Path]::GetFullPath($repoRoot)
+        if (-not $candidate.StartsWith($repoFull, [StringComparison]::OrdinalIgnoreCase) -or -not [System.IO.Directory]::Exists($candidate)) {
+            throw "仓库 $Repo 中未找到技能目录 $cleanSkillPath。"
+        }
+        $skillMdPath = Join-Path $candidate "SKILL.md"
+        if (-not [System.IO.File]::Exists($skillMdPath)) { throw "技能目录 $cleanSkillPath 中没有 SKILL.md。" }
+        $srcRoot = $candidate
+    } elseif ($SkillSlug) {
+        $skillFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter "SKILL.md" -ErrorAction SilentlyContinue)
+        $matched = $skillFiles | Where-Object { $_.Directory.Name -ieq $SkillSlug } | Select-Object -First 1
+        if (-not $matched) {
+            foreach ($sf in $skillFiles) {
+                try {
+                    $head = [System.IO.File]::ReadAllText($sf.FullName, [Text.Encoding]::UTF8)
+                    if ($head -match "(?im)^\s*name\s*:\s*['`"]?$([regex]::Escape($SkillSlug))['`"]?\s*$") { $matched = $sf; break }
+                } catch {}
+            }
+        }
+        if (-not $matched) { throw "仓库 $Repo 中未找到技能 $SkillSlug。" }
+        $srcRoot = $matched.Directory.FullName
+    }
     $dest = Resolve-SkillDir $id
     if ([System.IO.Directory]::Exists($dest)) { Remove-Item -LiteralPath $dest -Recurse -Force }
     Move-Item -LiteralPath $srcRoot -Destination $dest
@@ -390,14 +421,67 @@ function Install-SkillFromGithub {
     $entry = Guess-SkillEntry $dest
     $now = (Get-Date).ToString("o")
     $manifest = [ordered]@{
-        id = $id; kind = "skill"; name = $name; icon = "🧩"; description = ""; runtime = "node"; entry = $entry;
+        id = $id; kind = "skill"; name = $(if ($SkillSlug) { $SkillSlug } else { $name }); icon = "🧩"; description = ""; runtime = "node"; entry = $entry;
         inputHint = ""; outputHint = ""; trusted = $false; version = "";
-        source = [ordered]@{ type = "github"; repo = $Repo; ref = $okRef; url = "https://github.com/$Repo" };
+        source = [ordered]@{ type = "github"; repo = $Repo; ref = $okRef; skill = $SkillSlug; path = $SkillPath; url = "https://github.com/$Repo" };
         installedAt = $now; updatedAt = $now
     }
     Write-SkillManifest $dest $manifest
     $info = Get-SkillRepoInfo $dest
     return @{ id = $id; manifest = $manifest; files = $info.files; skillMd = $info.skillMd; readme = $info.readme; packageJson = $info.packageJson }
+}
+
+function Install-SkillFromArchive {
+    param(
+        [string] $DownloadUrl,
+        [string] $SkillId,
+        [string] $Name,
+        [string] $Provider,
+        [string] $DetailUrl,
+        [string] $Version,
+        [string] $Description
+    )
+    if ([string]::IsNullOrWhiteSpace($DownloadUrl)) { throw "市场未提供技能下载地址。" }
+    $uri = $null
+    if (-not [Uri]::TryCreate($DownloadUrl, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -ne "https") {
+        throw "技能下载地址必须是 HTTPS。"
+    }
+    $id = (Get-SafeFileName $SkillId) -replace '[^A-Za-z0-9_\-]', '-'
+    if ([string]::IsNullOrWhiteSpace($id)) { throw "市场技能 ID 无效。" }
+    try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
+    $tmpDir = Join-Path $dataDir "tmp"
+    if (-not [System.IO.Directory]::Exists($tmpDir)) { [void][System.IO.Directory]::CreateDirectory($tmpDir) }
+    $zip = Join-Path $tmpDir ("skillzip-" + (Get-Random) + ".zip")
+    $exDir = Join-Path $tmpDir ("skillex-" + (Get-Random))
+    try {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $zip -UseBasicParsing -TimeoutSec 90
+        if (-not [System.IO.File]::Exists($zip) -or ((Get-Item $zip).Length -lt 4)) { throw "市场返回了空文件。" }
+        $magic = [System.IO.File]::ReadAllBytes($zip)
+        if ($magic[0] -ne 0x50 -or $magic[1] -ne 0x4B) { throw "市场下载内容不是 ZIP 技能包。" }
+        Expand-Archive -Path $zip -DestinationPath $exDir -Force
+        $rootFiles = [System.IO.Directory]::GetFiles($exDir)
+        $rootDirs = [System.IO.Directory]::GetDirectories($exDir)
+        $srcRoot = if ($rootFiles.Count -eq 0 -and $rootDirs.Count -eq 1) { $rootDirs[0] } else { $exDir }
+        $dest = Resolve-SkillDir $id
+        if ([System.IO.Directory]::Exists($dest)) { Remove-Item -LiteralPath $dest -Recurse -Force }
+        Move-Item -LiteralPath $srcRoot -Destination $dest
+        $entry = Guess-SkillEntry $dest
+        $runtime = if ($entry -match '\.py$') { "python" } elseif ($entry -match '\.ps1$') { "powershell" } else { "node" }
+        $now = (Get-Date).ToString("o")
+        $manifest = [ordered]@{
+            id = $id; kind = "skill"; name = $(if ($Name) { $Name } else { $id }); icon = "🧩";
+            description = $Description; runtime = $runtime; entry = $entry;
+            inputHint = ""; outputHint = ""; trusted = $false; version = $Version;
+            source = [ordered]@{ type = "market"; provider = $Provider; id = $SkillId; url = $DetailUrl; downloadUrl = $DownloadUrl };
+            installedAt = $now; updatedAt = $now
+        }
+        Write-SkillManifest $dest $manifest
+        $info = Get-SkillRepoInfo $dest
+        return @{ id = $id; manifest = $manifest; files = $info.files; skillMd = $info.skillMd; readme = $info.readme; packageJson = $info.packageJson }
+    } finally {
+        try { if ([System.IO.File]::Exists($zip)) { [System.IO.File]::Delete($zip) } } catch {}
+        try { if ([System.IO.Directory]::Exists($exDir)) { Remove-Item -LiteralPath $exDir -Recurse -Force } } catch {}
+    }
 }
 
 # 运行一次性 MCP 客户端(node)，把请求对象经 stdin 传入，返回其 stdout(JSON 字符串)
@@ -1288,13 +1372,168 @@ while ($true) {
         if ($requestPath -eq "/skill-install" -and $method -eq "POST") {
             try {
                 $payload = $bodyText | ConvertFrom-Json
-                $repo = [string]$payload.repo
-                $ref = if ($payload.PSObject.Properties.Name -contains 'ref') { [string]$payload.ref } else { "" }
-                $res = Install-SkillFromGithub $repo $ref
+                if ($payload.PSObject.Properties.Name -contains 'downloadUrl' -and $payload.downloadUrl) {
+                    $res = Install-SkillFromArchive `
+                        -DownloadUrl ([string]$payload.downloadUrl) `
+                        -SkillId ([string]$payload.id) `
+                        -Name ([string]$payload.name) `
+                        -Provider ([string]$payload.provider) `
+                        -DetailUrl ([string]$payload.url) `
+                        -Version ([string]$payload.version) `
+                        -Description ([string]$payload.description)
+                } else {
+                    $repo = [string]$payload.repo
+                    $ref = if ($payload.PSObject.Properties.Name -contains 'ref') { [string]$payload.ref } else { "" }
+                    $skillSlug = if ($payload.PSObject.Properties.Name -contains 'skillSlug') { [string]$payload.skillSlug } else { "" }
+                    $skillPath = if ($payload.PSObject.Properties.Name -contains 'skillPath') { [string]$payload.skillPath } else { "" }
+                    $res = Install-SkillFromGithub $repo $ref $skillSlug $skillPath
+                }
                 $body = @{ ok = $true; id = $res.id; manifest = $res.manifest; files = @($res.files); skillMd = $res.skillMd; readme = $res.readme; packageJson = $res.packageJson } | ConvertTo-Json -Depth 8
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
             } catch {
                 Write-ServerLog "skill-install exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/skill-market-search*") {
+            try {
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                $source = Get-QueryValue $requestPath "source"
+                $q = Get-QueryValue $requestPath "q"
+                $provider = "json"
+                if ($source -match '^https?://(?:www\.)?skillsmp\.com(?:/|$)') {
+                    $provider = "skillsmp"
+                    $items = @()
+                    if ($q) {
+                        $url = "https://skillsmp.com/api/v1/skills/search?q=" + [Uri]::EscapeDataString($q) + "&page=1&limit=20&sortBy=stars"
+                        $remote = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers @{ Accept = "application/json"; "User-Agent" = "HRBP-Dashboard" } -TimeoutSec 30
+                        $payload = $remote.Content | ConvertFrom-Json
+                        if (-not $payload.success) { throw "SkillsMP 搜索失败。" }
+                        $items = @($payload.data.skills)
+                    } else {
+                        $remote = Invoke-WebRequest -Uri "https://skillsmp.com/search?sortBy=stars" -UseBasicParsing -Headers @{ "User-Agent" = "HRBP-Dashboard" } -TimeoutSec 30
+                        $matches = [regex]::Matches($remote.Content, '<a[^>]+href="(/creators/[^"]+)"[^>]*>([\s\S]*?)</a>')
+                        $seen = @{}
+                        foreach ($m in $matches) {
+                            $detailPath = $m.Groups[1].Value
+                            if ($seen.ContainsKey($detailPath)) { continue }
+                            $text = [regex]::Replace($m.Groups[2].Value, '<[^>]+>', ' ')
+                            $text = [Net.WebUtility]::HtmlDecode(([regex]::Replace($text, '\s+', ' ')).Trim())
+                            $parts = $text -split ' '
+                            if ($parts.Count -lt 4) { continue }
+                            $name = $parts[0]
+                            $starsText = $parts[1]
+                            $repo = $parts[2]
+                            if ($repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { continue }
+                            $mult = 1.0; $metric = $starsText
+                            if ($metric -match 'k$') { $mult = 1000; $metric = $metric.TrimEnd('k') }
+                            elseif ($metric -match 'm$') { $mult = 1000000; $metric = $metric.TrimEnd('m') }
+                            $stars = [int64]([double]$metric * $mult)
+                            $description = ($parts[3..($parts.Count - 1)] -join ' ') -replace '\s+\d{4}-\d{2}-\d{2}$', ''
+                            $detailUrl = "https://skillsmp.com$detailPath"
+                            try {
+                                $detail = Invoke-WebRequest -Uri $detailUrl -UseBasicParsing -Headers @{ "User-Agent" = "HRBP-Dashboard" } -TimeoutSec 20
+                                $githubMatch = [regex]::Match($detail.Content, 'href="(https://github\.com/[^"]+/tree/[^"]+)"')
+                                $githubUrl = if ($githubMatch.Success) { [Net.WebUtility]::HtmlDecode($githubMatch.Groups[1].Value) } else { "https://github.com/$repo" }
+                            } catch { $githubUrl = "https://github.com/$repo" }
+                            $items += [ordered]@{ id = ($detailPath.Trim('/') -replace '/', '-'); name = $name; description = $description; githubUrl = $githubUrl; skillUrl = $detailUrl; stars = $stars }
+                            $seen[$detailPath] = $true
+                            if ($items.Count -ge 10) { break }
+                        }
+                    }
+                    $data = [ordered]@{ skills = @($items) }
+                } elseif ($source -match '^https?://(?:www\.)?skills\.sh(?:/|$)') {
+                    $provider = "skillssh"
+                    $items = @()
+                    if ($q) {
+                        $npx = (Get-Command "npx.cmd" -ErrorAction SilentlyContinue).Source
+                        if (-not $npx) {
+                            $candidate = Join-Path $env:ProgramFiles "nodejs\npx.cmd"
+                            if ([System.IO.File]::Exists($candidate)) { $npx = $candidate }
+                        }
+                        if (-not $npx) { throw "未找到 npx.cmd，无法搜索 skills.sh。" }
+                        $si = [System.Diagnostics.ProcessStartInfo]::new()
+                        $si.FileName = $npx
+                        $si.UseShellExecute = $false
+                        $si.RedirectStandardOutput = $true
+                        $si.RedirectStandardError = $true
+                        $si.StandardOutputEncoding = [Text.Encoding]::UTF8
+                        $si.StandardErrorEncoding = [Text.Encoding]::UTF8
+                        $si.Arguments = (@("-y", "skills", "find", $q) | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join " "
+                        $proc = [System.Diagnostics.Process]::new()
+                        $proc.StartInfo = $si
+                        [void]$proc.Start()
+                        $stdout = $proc.StandardOutput.ReadToEnd()
+                        $stderr = $proc.StandardError.ReadToEnd()
+                        if (-not $proc.WaitForExit(60000)) { try { $proc.Kill() } catch {}; throw "skills.sh 搜索超时。" }
+                        if ($proc.ExitCode -ne 0 -and -not $stdout) { throw $(if ($stderr) { $stderr.Trim() } else { "skills.sh 搜索失败。" }) }
+                        $clean = [regex]::Replace($stdout, "$([char]27)\[[0-9;?]*[ -/]*[@-~]", "")
+                        $matches = [regex]::Matches($clean, '(?m)^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([^\s]+)\s+([0-9.]+[KMB]?) installs\s*$')
+                        foreach ($m in $matches) {
+                            $repo = $m.Groups[1].Value; $slug = $m.Groups[2].Value; $metric = $m.Groups[3].Value
+                            $mult = 1.0
+                            if ($metric -match 'K$') { $mult = 1000; $metric = $metric.TrimEnd('K') }
+                            elseif ($metric -match 'M$') { $mult = 1000000; $metric = $metric.TrimEnd('M') }
+                            elseif ($metric -match 'B$') { $mult = 1000000000; $metric = $metric.TrimEnd('B') }
+                            $installs = [int64]([double]$metric * $mult)
+                            $items += [ordered]@{ id = "$repo/$slug"; slug = $slug; name = $slug; source = $repo; sourceType = "github"; installs = $installs; installUrl = "https://github.com/$repo"; url = "https://skills.sh/$repo/$slug" }
+                        }
+                    } else {
+                        $remote = Invoke-WebRequest -Uri "https://www.skills.sh/" -UseBasicParsing -Headers @{ "User-Agent" = "HRBP-Dashboard" } -TimeoutSec 30
+                        $matches = [regex]::Matches($remote.Content, 'href="/([^"/]+/[^"/]+/[^"/]+)"[^>]*>([\s\S]*?)</a>')
+                        $seen = @{}
+                        foreach ($m in $matches) {
+                            $path = $m.Groups[1].Value
+                            if ($seen.ContainsKey($path)) { continue }
+                            $text = [regex]::Replace($m.Groups[2].Value, '<[^>]+>', ' ')
+                            $text = [Net.WebUtility]::HtmlDecode(([regex]::Replace($text, '\s+', ' ')).Trim())
+                            if ($text -notmatch '^\d+\s+') { continue }
+                            $parts = $path -split '/'
+                            if ($parts.Count -ne 3) { continue }
+                            $repo = "$($parts[0])/$($parts[1])"; $slug = $parts[2]
+                            $metricMatch = [regex]::Match($text, '([0-9.]+[KMB]?)\s*$')
+                            $installs = 0
+                            if ($metricMatch.Success) {
+                                $metric = $metricMatch.Groups[1].Value; $mult = 1.0
+                                if ($metric -match 'K$') { $mult = 1000; $metric = $metric.TrimEnd('K') }
+                                elseif ($metric -match 'M$') { $mult = 1000000; $metric = $metric.TrimEnd('M') }
+                                elseif ($metric -match 'B$') { $mult = 1000000000; $metric = $metric.TrimEnd('B') }
+                                $installs = [int64]([double]$metric * $mult)
+                            }
+                            $items += [ordered]@{ id = "$repo/$slug"; slug = $slug; name = $slug; source = $repo; sourceType = "github"; installs = $installs; installUrl = "https://github.com/$repo"; url = "https://skills.sh/$repo/$slug" }
+                            $seen[$path] = $true
+                            if ($items.Count -ge 20) { break }
+                        }
+                    }
+                    $data = [ordered]@{ data = @($items) }
+                } elseif ($source -match '^https?://(?:www\.)?skillhub\.(?:cn|tencent\.com)(?:/|$)' -or $source -match '^https?://api\.skillhub\.(?:cn|tencent\.com)(?:/|$)') {
+                    $provider = "skillhub"
+                    $apiHost = if ($source -match 'skillhub\.tencent\.com') { "https://api.skillhub.tencent.com" } else { "https://api.skillhub.cn" }
+                    $url = "$apiHost/api/skills?page=1&pageSize=20&sortBy=score&order=desc"
+                    if ($q) { $url += "&keyword=" + [Uri]::EscapeDataString($q) }
+                } elseif ($source -notmatch '^https?://') {
+                    $provider = "github"
+                    $full = $(if ($q) { "$q $source" } else { $source })
+                    $url = "https://api.github.com/search/repositories?q=" + [Uri]::EscapeDataString($full) + "&sort=stars&order=desc&per_page=20"
+                } else {
+                    $url = $source
+                    if ($url.Contains("{q}")) { $url = $url.Replace("{q}", [Uri]::EscapeDataString($q)) }
+                    elseif ($q) { $url += $(if ($url.Contains("?")) { "&" } else { "?" }) + "q=" + [Uri]::EscapeDataString($q) }
+                }
+                if ($provider -ne "skillssh" -and $provider -ne "skillsmp") {
+                    $headers = @{ Accept = "application/json"; "User-Agent" = "HRBP-Dashboard" }
+                    $remote = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $headers -TimeoutSec 30
+                    $contentType = [string]$remote.Headers["Content-Type"]
+                    if ($contentType -notmatch 'json') { throw "市场返回的不是 JSON（$contentType），请配置原生 API 地址而不是网页地址。" }
+                    $data = $remote.Content | ConvertFrom-Json
+                }
+                $body = @{ ok = $true; provider = $provider; source = $source; data = $data } | ConvertTo-Json -Depth 15
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "skill-market-search exception: $($_.Exception.Message)"
                 $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
             }
