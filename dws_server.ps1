@@ -283,6 +283,123 @@ function Get-TaskArchiveDir {
     return @{ Dir = $dir; Entries = $entries }
 }
 
+# ===================== 技能看板（本地脚本型 skill） =====================
+function Get-SkillsDir {
+    $dir = Join-Path $scriptDir "skills"
+    if (-not [System.IO.Directory]::Exists($dir)) { [void][System.IO.Directory]::CreateDirectory($dir) }
+    return $dir
+}
+
+function Resolve-SkillDir {
+    param([string] $Id)
+    if ([string]::IsNullOrWhiteSpace($Id) -or $Id -notmatch '^[A-Za-z0-9_\-]+$') { throw "Invalid skill id." }
+    return (Join-Path (Get-SkillsDir) $Id)
+}
+
+function Read-SkillManifest {
+    param([string] $Dir)
+    $mf = Join-Path $Dir "skill.json"
+    if (-not [System.IO.File]::Exists($mf)) { return $null }
+    try { return ([System.IO.File]::ReadAllText($mf, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json) } catch { return $null }
+}
+
+function Write-SkillManifest {
+    param([string] $Dir, $Manifest)
+    $mf = Join-Path $Dir "skill.json"
+    $json = $Manifest | ConvertTo-Json -Depth 8
+    [System.IO.File]::WriteAllText($mf, $json, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# 猜测 node 入口：package.json 的 main → index.js → 根目录首个 .js
+function Guess-SkillEntry {
+    param([string] $Dir)
+    $pkg = Join-Path $Dir "package.json"
+    if ([System.IO.File]::Exists($pkg)) {
+        try {
+            $p = [System.IO.File]::ReadAllText($pkg, [Text.Encoding]::UTF8) | ConvertFrom-Json
+            if ($p.main -and [System.IO.File]::Exists((Join-Path $Dir ([string]$p.main)))) { return [string]$p.main }
+            if ($p.bin) {
+                if ($p.bin -is [string]) { if ([System.IO.File]::Exists((Join-Path $Dir ([string]$p.bin)))) { return [string]$p.bin } }
+                else { foreach ($k in $p.bin.PSObject.Properties.Name) { $v = [string]$p.bin.$k; if ([System.IO.File]::Exists((Join-Path $Dir $v))) { return $v } } }
+            }
+        } catch {}
+    }
+    foreach ($cand in @("index.js", "main.js", "skill.js", "cli.js")) { if ([System.IO.File]::Exists((Join-Path $Dir $cand))) { return $cand } }
+    $js = [System.IO.Directory]::GetFiles($Dir, "*.js")
+    if ($js.Count -ge 1) { return [System.IO.Path]::GetFileName($js[0]) }
+    return ""
+}
+
+# 采集仓库内说明性文件与文件树，供前端大模型蒸馏 manifest
+function Get-SkillRepoInfo {
+    param([string] $Dir)
+    $files = @()
+    try {
+        foreach ($f in [System.IO.Directory]::GetFiles($Dir, "*", [System.IO.SearchOption]::AllDirectories)) {
+            $rel = $f.Substring($Dir.Length).TrimStart('\', '/').Replace('\', '/')
+            if ($rel -like "node_modules/*" -or $rel -like ".git/*") { continue }
+            $files += $rel
+            if ($files.Count -ge 200) { break }
+        }
+    } catch {}
+    function ReadIf($path, $max) {
+        if ([System.IO.File]::Exists($path)) {
+            try { $t = [System.IO.File]::ReadAllText($path, [Text.Encoding]::UTF8); if ($t.Length -gt $max) { $t = $t.Substring(0, $max) }; return $t } catch { return "" }
+        }
+        return ""
+    }
+    $skillMd = ""
+    foreach ($n in @("SKILL.md", "skill.md", "Skill.md")) { $p = Join-Path $Dir $n; if ([System.IO.File]::Exists($p)) { $skillMd = ReadIf $p 8000; break } }
+    $readme = ""
+    foreach ($n in @("README.md", "readme.md", "Readme.md", "README", "README.txt")) { $p = Join-Path $Dir $n; if ([System.IO.File]::Exists($p)) { $readme = ReadIf $p 8000; break } }
+    $pkg = ReadIf (Join-Path $Dir "package.json") 4000
+    return @{ files = $files; skillMd = $skillMd; readme = $readme; packageJson = $pkg }
+}
+
+function Install-SkillFromGithub {
+    param([string] $Repo, [string] $Ref)
+    if ($Repo -notmatch '^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$') { throw "仓库格式应为 owner/name。" }
+    try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
+    $parts = $Repo -split '/'
+    $owner = $parts[0]; $name = $parts[1]
+    $id = (Get-SafeFileName ($owner + "-" + $name)) -replace '[^A-Za-z0-9_\-]', '-'
+    $refs = @()
+    if ($Ref) { $refs += $Ref }
+    $refs += @("main", "master")
+    $tmpDir = Join-Path $dataDir "tmp"
+    if (-not [System.IO.Directory]::Exists($tmpDir)) { [void][System.IO.Directory]::CreateDirectory($tmpDir) }
+    $zip = Join-Path $tmpDir ("skillzip-" + (Get-Random) + ".zip")
+    $okRef = $null
+    foreach ($r in ($refs | Select-Object -Unique)) {
+        $url = "https://codeload.github.com/$owner/$name/zip/refs/heads/$r"
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 60
+            if ([System.IO.File]::Exists($zip) -and ((Get-Item $zip).Length -gt 0)) { $okRef = $r; break }
+        } catch {}
+    }
+    if (-not $okRef) { throw "下载失败：无法从 GitHub 获取 $Repo（请确认仓库与分支存在，且本机网络可访问 codeload.github.com）。" }
+    $exDir = Join-Path $tmpDir ("skillex-" + (Get-Random))
+    Expand-Archive -Path $zip -DestinationPath $exDir -Force
+    try { [System.IO.File]::Delete($zip) } catch {}
+    $top = [System.IO.Directory]::GetDirectories($exDir)
+    $srcRoot = if ($top.Count -ge 1) { $top[0] } else { $exDir }
+    $dest = Resolve-SkillDir $id
+    if ([System.IO.Directory]::Exists($dest)) { Remove-Item -LiteralPath $dest -Recurse -Force }
+    Move-Item -LiteralPath $srcRoot -Destination $dest
+    try { Remove-Item -LiteralPath $exDir -Recurse -Force } catch {}
+    $entry = Guess-SkillEntry $dest
+    $now = (Get-Date).ToString("o")
+    $manifest = [ordered]@{
+        id = $id; name = $name; icon = "🧩"; description = ""; runtime = "node"; entry = $entry;
+        inputHint = ""; outputHint = ""; trusted = $false; version = "";
+        source = [ordered]@{ type = "github"; repo = $Repo; ref = $okRef; url = "https://github.com/$Repo" };
+        installedAt = $now; updatedAt = $now
+    }
+    Write-SkillManifest $dest $manifest
+    $info = Get-SkillRepoInfo $dest
+    return @{ id = $id; manifest = $manifest; files = $info.files; skillMd = $info.skillMd; readme = $info.readme; packageJson = $info.packageJson }
+}
+
 function Start-AnalyticsParse {
     param([string] $Cat)
     $node = (Get-Command node -ErrorAction SilentlyContinue).Source
@@ -1109,6 +1226,161 @@ while ($true) {
                 Write-ServerLog "affairs-extract exception: $($_.Exception.Message)"
                 $message = @{ ok = $false; error = $_.Exception.Message; text = "" } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/skill-list*") {
+            try {
+                $root = Get-SkillsDir
+                $arr = @()
+                foreach ($d in [System.IO.Directory]::GetDirectories($root)) { $mm = Read-SkillManifest $d; if ($mm) { $arr += $mm } }
+                $body = @{ ok = $true; skills = @($arr) } | ConvertTo-Json -Depth 8
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "skill-list exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message; skills = @() } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/skill-install" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $repo = [string]$payload.repo
+                $ref = if ($payload.PSObject.Properties.Name -contains 'ref') { [string]$payload.ref } else { "" }
+                $res = Install-SkillFromGithub $repo $ref
+                $body = @{ ok = $true; id = $res.id; manifest = $res.manifest; files = @($res.files); skillMd = $res.skillMd; readme = $res.readme; packageJson = $res.packageJson } | ConvertTo-Json -Depth 8
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "skill-install exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/skill-update" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $dir = Resolve-SkillDir ([string]$payload.id)
+                $m = Read-SkillManifest $dir
+                if (-not $m) { throw "技能不存在。" }
+                foreach ($k in @('name', 'icon', 'description', 'runtime', 'entry', 'inputHint', 'outputHint', 'version')) {
+                    if ($payload.PSObject.Properties.Name -contains $k) {
+                        if ($m.PSObject.Properties.Name -contains $k) { $m.$k = [string]$payload.$k }
+                        else { $m | Add-Member -NotePropertyName $k -NotePropertyValue ([string]$payload.$k) -Force }
+                    }
+                }
+                if ($payload.PSObject.Properties.Name -contains 'trusted') {
+                    if ($m.PSObject.Properties.Name -contains 'trusted') { $m.trusted = [bool]$payload.trusted }
+                    else { $m | Add-Member -NotePropertyName 'trusted' -NotePropertyValue ([bool]$payload.trusted) -Force }
+                }
+                if ($m.PSObject.Properties.Name -contains 'updatedAt') { $m.updatedAt = (Get-Date).ToString("o") } else { $m | Add-Member -NotePropertyName 'updatedAt' -NotePropertyValue ((Get-Date).ToString("o")) -Force }
+                Write-SkillManifest $dir $m
+                $body = @{ ok = $true; manifest = $m } | ConvertTo-Json -Depth 8
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "skill-update exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/skill-delete" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $dir = Resolve-SkillDir ([string]$payload.id)
+                if ([System.IO.Directory]::Exists($dir)) { Remove-Item -LiteralPath $dir -Recurse -Force }
+                $body = @{ ok = $true } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "skill-delete exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/skill-inspect*") {
+            try {
+                $dir = Resolve-SkillDir (Get-QueryValue $requestPath "id")
+                $m = Read-SkillManifest $dir
+                if (-not $m) { throw "技能不存在。" }
+                $entryCode = ""
+                if ($m.entry) {
+                    $entryPath = Join-Path $dir ([string]$m.entry)
+                    if ([System.IO.File]::Exists($entryPath)) {
+                        try { $entryCode = [System.IO.File]::ReadAllText($entryPath, [Text.Encoding]::UTF8); if ($entryCode.Length -gt 12000) { $entryCode = $entryCode.Substring(0, 12000) + "`n…（已截断）" } } catch {}
+                    }
+                }
+                $deps = @()
+                $pkg = Join-Path $dir "package.json"
+                if ([System.IO.File]::Exists($pkg)) {
+                    try { $p = [System.IO.File]::ReadAllText($pkg, [Text.Encoding]::UTF8) | ConvertFrom-Json; if ($p.dependencies) { foreach ($k in $p.dependencies.PSObject.Properties.Name) { $deps += ($k + "@" + [string]$p.dependencies.$k) } } } catch {}
+                }
+                $info = Get-SkillRepoInfo $dir
+                $body = @{ ok = $true; manifest = $m; entry = [string]$m.entry; entryCode = $entryCode; deps = @($deps); files = @($info.files) } | ConvertTo-Json -Depth 8
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "skill-inspect exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/skill-run" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $dir = Resolve-SkillDir ([string]$payload.id)
+                $m = Read-SkillManifest $dir
+                if (-not $m) { throw "技能不存在。" }
+                $confirmed = ($payload.PSObject.Properties.Name -contains 'confirmed') -and [bool]$payload.confirmed
+                if ((-not ([bool]$m.trusted)) -and (-not $confirmed)) { throw "该技能尚未确认信任，请先确认后再运行。" }
+                $runtime = if ($m.runtime) { [string]$m.runtime } else { "node" }
+                $entry = [string]$m.entry
+                if (-not $entry) { throw "未配置入口文件 entry。" }
+                $entryPath = Join-Path $dir $entry
+                if (-not [System.IO.File]::Exists($entryPath)) { throw "入口文件不存在：$entry" }
+                $tmpRoot = Join-Path $dataDir "tmp"
+                if (-not [System.IO.Directory]::Exists($tmpRoot)) { [void][System.IO.Directory]::CreateDirectory($tmpRoot) }
+                $work = Join-Path $tmpRoot ("skillrun-" + (Get-Random))
+                [void][System.IO.Directory]::CreateDirectory($work)
+                if ($payload.files) {
+                    foreach ($f in @($payload.files)) {
+                        try { [System.IO.File]::WriteAllBytes((Join-Path $work (Get-SafeFileName ([string]$f.name))), [Convert]::FromBase64String([string]$f.dataBase64)) } catch {}
+                    }
+                }
+                $inputText = [string]$payload.input
+                try { [System.IO.File]::WriteAllText((Join-Path $work "input.txt"), $inputText, (New-Object System.Text.UTF8Encoding($false))) } catch {}
+                $exe = $null; $argLine = $null
+                switch ($runtime) {
+                    "python" { $exe = (Get-Command python -ErrorAction SilentlyContinue).Source; if (-not $exe) { $exe = (Get-Command py -ErrorAction SilentlyContinue).Source }; $argLine = '"' + $entryPath + '" "' + $work + '"' }
+                    "powershell" { $exe = "powershell.exe"; $argLine = '-NoProfile -ExecutionPolicy Bypass -File "' + $entryPath + '" "' + $work + '"' }
+                    default { $exe = (Get-Command node -ErrorAction SilentlyContinue).Source; $argLine = '"' + $entryPath + '" "' + $work + '"' }
+                }
+                if (-not $exe) { throw "未找到运行时：$runtime" }
+                $si = [System.Diagnostics.ProcessStartInfo]::new()
+                $si.FileName = $exe; $si.Arguments = $argLine; $si.WorkingDirectory = $dir
+                $si.UseShellExecute = $false; $si.RedirectStandardInput = $true; $si.RedirectStandardOutput = $true; $si.RedirectStandardError = $true
+                $si.StandardOutputEncoding = [Text.Encoding]::UTF8; $si.StandardErrorEncoding = [Text.Encoding]::UTF8
+                $pr = [System.Diagnostics.Process]::new(); $pr.StartInfo = $si; [void]$pr.Start()
+                try { $inBytes = [Text.Encoding]::UTF8.GetBytes($inputText); $pr.StandardInput.BaseStream.Write($inBytes, 0, $inBytes.Length); $pr.StandardInput.BaseStream.Flush(); $pr.StandardInput.Close() } catch {}
+                $outTask = $pr.StandardOutput.ReadToEndAsync()
+                $errTask = $pr.StandardError.ReadToEndAsync()
+                $exited = $pr.WaitForExit(120000)
+                if (-not $exited) { try { $pr.Kill() } catch {}; try { Remove-Item -LiteralPath $work -Recurse -Force } catch {}; throw "技能运行超时（120 秒）。" }
+                $out = $outTask.Result; $errOut = $errTask.Result
+                try { Remove-Item -LiteralPath $work -Recurse -Force } catch {}
+                $body = @{ ok = ($pr.ExitCode -eq 0); exitCode = $pr.ExitCode; output = $out; error = $errOut } | ConvertTo-Json -Depth 6 -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "skill-run exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
             }
             continue
         }
