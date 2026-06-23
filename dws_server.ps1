@@ -520,6 +520,28 @@ function Get-SkillRepoInfo {
     return @{ files = $files; skillMd = $skillMd; readme = $readme; packageJson = $pkg }
 }
 
+# 经 GitHub Contents API 递归下载某个子目录（只取该技能的文件，避免为一个子目录拉取整个大仓库）
+function Download-GithubSubdir {
+    param([string] $Owner, [string] $Name, [string] $Ref, [string] $SubPath, [string] $DestDir)
+    $encPath = (($SubPath -split '/') | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/'
+    $api = ("https://api.github.com/repos/{0}/{1}/contents/{2}?ref={3}" -f $Owner, $Name, $encPath, [Uri]::EscapeDataString($Ref))
+    $hdr = @{ "User-Agent" = "HRBP-Dashboard"; "Accept" = "application/vnd.github+json" }
+    $resp = Invoke-WebRequest -Uri $api -UseBasicParsing -Headers $hdr -TimeoutSec 30
+    $items = @($resp.Content | ConvertFrom-Json)
+    if (-not [System.IO.Directory]::Exists($DestDir)) { [void][System.IO.Directory]::CreateDirectory($DestDir) }
+    foreach ($it in $items) {
+        if (-not $it.type) { continue }
+        if ($it.type -eq "dir") {
+            Download-GithubSubdir $Owner $Name $Ref $it.path (Join-Path $DestDir $it.name)
+        }
+        elseif ($it.type -eq "file" -and $it.download_url) {
+            $script:SubdirFiles++
+            if ($script:SubdirFiles -gt 500) { throw "子目录文件过多(>500)，放弃 API 下载。" }
+            Invoke-WebRequest -Uri $it.download_url -OutFile (Join-Path $DestDir $it.name) -UseBasicParsing -TimeoutSec 60
+        }
+    }
+}
+
 function Install-SkillFromGithub {
     param([string] $Repo, [string] $Ref, [string] $SkillSlug, [string] $SkillPath)
     if ($Repo -notmatch '^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$') { throw "仓库格式应为 owner/name。" }
@@ -533,51 +555,70 @@ function Install-SkillFromGithub {
     $refs += @("main", "master")
     $tmpDir = Join-Path $dataDir "tmp"
     if (-not [System.IO.Directory]::Exists($tmpDir)) { [void][System.IO.Directory]::CreateDirectory($tmpDir) }
-    $zip = Join-Path $tmpDir ("skillzip-" + (Get-Random) + ".zip")
-    $okRef = $null
-    foreach ($r in ($refs | Select-Object -Unique)) {
-        $url = "https://codeload.github.com/$owner/$name/zip/refs/heads/$r"
-        try {
-            Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 60
-            if ([System.IO.File]::Exists($zip) -and ((Get-Item $zip).Length -gt 0)) { $okRef = $r; break }
-        } catch {}
-    }
-    if (-not $okRef) { throw "下载失败：无法从 GitHub 获取 $Repo（请确认仓库与分支存在，且本机网络可访问 codeload.github.com）。" }
-    $exDir = Join-Path $tmpDir ("skillex-" + (Get-Random))
-    Expand-Archive -Path $zip -DestinationPath $exDir -Force
-    try { [System.IO.File]::Delete($zip) } catch {}
-    $top = [System.IO.Directory]::GetDirectories($exDir)
-    $repoRoot = if ($top.Count -ge 1) { $top[0] } else { $exDir }
-    $srcRoot = $repoRoot
+    $cleanSkillPath = ""
     if ($SkillPath) {
         $cleanSkillPath = ($SkillPath -replace '\\', '/').Trim('/')
         if ($cleanSkillPath -match '(^|/)\.\.(/|$)') { throw "技能目录路径无效。" }
-        $candidate = [System.IO.Path]::GetFullPath((Join-Path $repoRoot ($cleanSkillPath -replace '/', [System.IO.Path]::DirectorySeparatorChar)))
-        $repoFull = [System.IO.Path]::GetFullPath($repoRoot)
-        if (-not $candidate.StartsWith($repoFull, [StringComparison]::OrdinalIgnoreCase) -or -not [System.IO.Directory]::Exists($candidate)) {
-            throw "仓库 $Repo 中未找到技能目录 $cleanSkillPath。"
+    }
+    $okRef = $null
+    $srcRoot = $null
+    $exDir = $null
+    # 快路径：技能位于子目录时，仅经 GitHub Contents API 下载该子目录，避免为一个子目录拉取整个(可能上百 MB~GB)的仓库
+    if ($cleanSkillPath) {
+        foreach ($r in ($refs | Select-Object -Unique)) {
+            $subDest = Join-Path $tmpDir ("skillsub-" + (Get-Random))
+            try {
+                $script:SubdirFiles = 0
+                Download-GithubSubdir $owner $name $r $cleanSkillPath $subDest
+                if ([System.IO.File]::Exists((Join-Path $subDest "SKILL.md"))) { $srcRoot = $subDest; $okRef = $r; break }
+                Remove-Item -LiteralPath $subDest -Recurse -Force -ErrorAction SilentlyContinue
+            } catch { try { Remove-Item -LiteralPath $subDest -Recurse -Force -ErrorAction SilentlyContinue } catch {} }
         }
-        $skillMdPath = Join-Path $candidate "SKILL.md"
-        if (-not [System.IO.File]::Exists($skillMdPath)) { throw "技能目录 $cleanSkillPath 中没有 SKILL.md。" }
-        $srcRoot = $candidate
-    } elseif ($SkillSlug) {
-        $skillFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter "SKILL.md" -ErrorAction SilentlyContinue)
-        $matched = $skillFiles | Where-Object { $_.Directory.Name -ieq $SkillSlug } | Select-Object -First 1
-        if (-not $matched) {
-            foreach ($sf in $skillFiles) {
-                try {
-                    $head = [System.IO.File]::ReadAllText($sf.FullName, [Text.Encoding]::UTF8)
-                    if ($head -match "(?im)^\s*name\s*:\s*['`"]?$([regex]::Escape($SkillSlug))['`"]?\s*$") { $matched = $sf; break }
-                } catch {}
+    }
+    # 回退：整仓 zip 下载（仓库本身即技能，或子目录 API 失败时）
+    if (-not $srcRoot) {
+        $zip = Join-Path $tmpDir ("skillzip-" + (Get-Random) + ".zip")
+        foreach ($r in ($refs | Select-Object -Unique)) {
+            $url = "https://codeload.github.com/$owner/$name/zip/refs/heads/$r"
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 60
+                if ([System.IO.File]::Exists($zip) -and ((Get-Item $zip).Length -gt 0)) { $okRef = $r; break }
+            } catch {}
+        }
+        if (-not $okRef) { throw "下载失败：无法从 GitHub 获取 $Repo（请确认仓库与分支存在，且本机网络可访问 codeload.github.com）。" }
+        $exDir = Join-Path $tmpDir ("skillex-" + (Get-Random))
+        Expand-Archive -Path $zip -DestinationPath $exDir -Force
+        try { [System.IO.File]::Delete($zip) } catch {}
+        $top = [System.IO.Directory]::GetDirectories($exDir)
+        $repoRoot = if ($top.Count -ge 1) { $top[0] } else { $exDir }
+        $srcRoot = $repoRoot
+        if ($cleanSkillPath) {
+            $candidate = [System.IO.Path]::GetFullPath((Join-Path $repoRoot ($cleanSkillPath -replace '/', [System.IO.Path]::DirectorySeparatorChar)))
+            $repoFull = [System.IO.Path]::GetFullPath($repoRoot)
+            if (-not $candidate.StartsWith($repoFull, [StringComparison]::OrdinalIgnoreCase) -or -not [System.IO.Directory]::Exists($candidate)) {
+                throw "仓库 $Repo 中未找到技能目录 $cleanSkillPath。"
             }
+            if (-not [System.IO.File]::Exists((Join-Path $candidate "SKILL.md"))) { throw "技能目录 $cleanSkillPath 中没有 SKILL.md。" }
+            $srcRoot = $candidate
+        } elseif ($SkillSlug) {
+            $skillFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter "SKILL.md" -ErrorAction SilentlyContinue)
+            $matched = $skillFiles | Where-Object { $_.Directory.Name -ieq $SkillSlug } | Select-Object -First 1
+            if (-not $matched) {
+                foreach ($sf in $skillFiles) {
+                    try {
+                        $head = [System.IO.File]::ReadAllText($sf.FullName, [Text.Encoding]::UTF8)
+                        if ($head -match "(?im)^\s*name\s*:\s*['`"]?$([regex]::Escape($SkillSlug))['`"]?\s*$") { $matched = $sf; break }
+                    } catch {}
+                }
+            }
+            if (-not $matched) { throw "仓库 $Repo 中未找到技能 $SkillSlug。" }
+            $srcRoot = $matched.Directory.FullName
         }
-        if (-not $matched) { throw "仓库 $Repo 中未找到技能 $SkillSlug。" }
-        $srcRoot = $matched.Directory.FullName
     }
     $dest = Resolve-SkillDir $id
     if ([System.IO.Directory]::Exists($dest)) { Remove-Item -LiteralPath $dest -Recurse -Force }
     Move-Item -LiteralPath $srcRoot -Destination $dest
-    try { Remove-Item -LiteralPath $exDir -Recurse -Force } catch {}
+    if ($exDir) { try { Remove-Item -LiteralPath $exDir -Recurse -Force } catch {} }
     $entry = Guess-SkillEntry $dest
     $contract = Get-SkillInitialContract $dest $entry
     $now = (Get-Date).ToString("o")
