@@ -2481,6 +2481,17 @@ body.dark .af-turn-ai,body.dark .af-att-item{background:rgba(8,20,29,.4);border-
 .mcp-tool{border:1px solid var(--slate-200);border-radius:8px;padding:9px 12px}
 .mcp-tool-h{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--slate-700)}
 body.dark .sk-mkt-tab{background:rgba(8,20,29,.6);color:#9fb8c2}body.dark .mcp-tool{background:rgba(8,20,29,.5);border-color:rgba(121,216,232,.18)}
+/* 应用(技能/MCP)运行与编辑弹窗：头/底固定、正文留白并独立滚动，避免内容贴边铺满整框 */
+#skModal .dialog{display:flex;flex-direction:column;overflow:hidden;padding:0;width:680px}
+#skModal .dialog-head{flex:0 0 auto;padding:15px 22px}
+#skModal-body{flex:1 1 auto;overflow:auto;padding:18px 22px}
+#skModal-body .fg:last-child{margin-bottom:0}
+#skModal-body .af-result{max-height:48vh}
+#skModal-body .mcp-tool-list{max-height:42vh;overflow:auto;padding-right:2px}
+#skModal-foot{flex:0 0 auto;padding:13px 22px;border-top:1px solid var(--slate-200);margin-top:0!important;background:var(--slate-50);border-radius:0 0 12px 12px}
+body.dark #skModal-foot{background:rgba(8,20,29,.4);border-color:rgba(121,216,232,.14)}
+.sk-out-h{margin-top:0}
+#skModal-body>div[id$='-out']:empty,#skModal-body #sk-run-att:empty,#skModal-body #mcp-call-box:empty{display:none}
 body.dark .sk-search select{background:rgba(8,20,29,.6);border-color:rgba(121,216,232,.18);color:#d7e5ea}
 /* 智能工作流 */
 .wf-wrap{max-width:none}
@@ -5544,7 +5555,7 @@ function mcpPickTool(i){var t=MCP_TOOLS[i];if(!t)return;var tmpl=mcpSchemaTempla
 async function mcpCallTool(tool){var ta=document.getElementById("mcp-args");var argsObj={};if(ta&&ta.value.trim()){try{argsObj=JSON.parse(ta.value);}catch(e){T("参数不是合法 JSON","w");return;}}var out=document.getElementById("mcp-call-out");if(out)out.innerHTML="<div class='af-empty'>执行中…</div>";try{var r=await fetch("/mcp-call",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:MCP_RUN_ID,tool:tool,arguments:argsObj,confirmed:true})});var d=await r.json();if(out)out.innerHTML="<div class='sk-out-h"+(d.ok?"":" err")+"'>"+(d.ok?"结果":"失败")+"</div><div class='af-result'>"+appRenderOutput(mcpResultValue(d))+"</div>";}catch(e){if(out)out.innerHTML="<div class='sk-out-h err'>执行失败："+ESC((e&&e.message)||e)+"</div>";}}
 function mcpResultValue(d){if(!d.ok)return d.error||"未知错误";var res=d.result;if(!res)return"(空)";if(res.structuredContent!==undefined)return res.structuredContent;if(res.content&&res.content.length!==undefined){var vals=res.content.map(function(c){if(c.text!==undefined){var p=appTryJson(c.text);return p===null?c.text:p;}return c;});return vals.length===1?vals[0]:vals;}return res;}
 function mcpResultText(d){if(!d.ok)return d.error||"未知错误";var res=d.result;if(!res)return "(空)";if(res.content&&res.content.length!==undefined){return res.content.map(function(c){return c.text||("["+(c.type||"内容")+"] "+JSON.stringify(c).slice(0,800));}).join("\n\n");}return "```json\n"+JSON.stringify(res,null,2).slice(0,4000)+"\n```";}
-function skOpenModal(title,body,foot){var ov=document.getElementById("skModal");if(!ov){ov=document.createElement("div");ov.id="skModal";ov.className="overlay";ov.innerHTML="<div class='dialog' style='width:780px;max-width:94vw'><div class='dialog-head'><h3 id='skModal-title' style='font-size:16px'></h3><button class='icon-btn' onclick='skCloseModal()' style='border:none;background:none;cursor:pointer;font-size:22px;color:var(--slate-400)'>×</button></div><div id='skModal-body'></div><div id='skModal-foot' style='display:flex;gap:8px;justify-content:flex-end;margin-top:14px'></div></div>";document.body.appendChild(ov);ov.addEventListener("click",function(e){if(e.target===ov)skCloseModal();});}document.getElementById("skModal-title").textContent=title;document.getElementById("skModal-body").innerHTML=body;document.getElementById("skModal-foot").innerHTML=foot||"";ov.style.display="flex";return ov;}
+function skOpenModal(title,body,foot){var ov=document.getElementById("skModal");if(!ov){ov=document.createElement("div");ov.id="skModal";ov.className="overlay";ov.innerHTML="<div class='dialog' style='width:680px;max-width:94vw'><div class='dialog-head'><h3 id='skModal-title' style='font-size:16px'></h3><button class='icon-btn' onclick='skCloseModal()' style='border:none;background:none;cursor:pointer;font-size:22px;color:var(--slate-400)'>×</button></div><div id='skModal-body'></div><div id='skModal-foot' style='display:flex;gap:8px;justify-content:flex-end;margin-top:14px'></div></div>";document.body.appendChild(ov);ov.addEventListener("click",function(e){if(e.target===ov)skCloseModal();});}document.getElementById("skModal-title").textContent=title;document.getElementById("skModal-body").innerHTML=body;document.getElementById("skModal-foot").innerHTML=foot||"";ov.style.display="flex";return ov;}
 function skCloseModal(){var ov=document.getElementById("skModal");if(ov)ov.style.display="none";}
 /* ====================== 智能工作流 ====================== */
 var WF_ATTS=[],WF_RUNNING=false,WF_LAST_RUN=null;
