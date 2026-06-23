@@ -752,6 +752,18 @@ $port = $server.Port
 $port | Out-File "$scriptDir\.port.txt" -Encoding ascii
 Write-ServerLog "server started pid=$PID port=$port statePath=$statePath"
 
+# Single-instance hardening: this process holds the mutex, so it is the only legitimate server.
+# Kill any other dws_server.ps1 processes from this same board directory (stragglers left by the
+# frontend self-heal / multiple tabs occasionally launching, or instances stuck before the mutex check),
+# so the process list never accumulates multiple dws_server.ps1 entries.
+try {
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction Stop |
+        Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and ($_.CommandLine -match '-File\s+"?[^"]*dws_server\.ps1') -and ($_.CommandLine -like ("*" + $scriptDir + "*")) } |
+        ForEach-Object {
+            try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop; Write-ServerLog "cleaned up stray server instance pid=$($_.ProcessId)" } catch {}
+        }
+} catch {}
+
 $year = (Get-Date).Year
 $endDate = "$year-12-31T23:59:59+08:00"
 

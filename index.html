@@ -4958,14 +4958,18 @@ function syncFromDingtalk(options){
       if(silent)throw e;
       return;
     }
-    // Allow launching the backend at most once per 60s to prevent concurrent timers from relaunching repeatedly
-    var nowTs=Date.now();
-    if(window.__dwsLaunchAt&&nowTs-window.__dwsLaunchAt<60000){
+    // Launch the backend at most once per 60s, shared ACROSS ALL open dashboard tabs via localStorage
+    // (not just per-tab), so multiple tabs don't each spawn a backend. The server mutex rejects duplicates,
+    // but each rejected launch still flickers in the process list; this keeps that from happening repeatedly.
+    var nowTs=Date.now(),dwsLast=0;
+    try{dwsLast=parseInt(localStorage.getItem("dws_launch_at")||"0",10)||0;}catch(_e){}
+    if((window.__dwsLaunchAt&&nowTs-window.__dwsLaunchAt<60000)||(dwsLast&&nowTs-dwsLast<60000)){
       resetSyncButton(btn);
       if(silent)throw e;
       return;
     }
     window.__dwsLaunchAt=nowTs;
+    try{localStorage.setItem("dws_launch_at",String(nowTs));}catch(_e){}
     // Service not running; try to start it in the background
     if(!silent)T("正在启动同步服务...","i");
     try{
