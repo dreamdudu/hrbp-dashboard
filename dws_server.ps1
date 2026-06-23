@@ -1806,6 +1806,38 @@ while ($true) {
             continue
         }
 
+        # MCPWorld 导航站搜索代理：mcpworld.com 非标准 Registry，列表接口为 /api/mcp-market/servers（搜索词参数 wd），条目多为 GitHub 仓库（serverUrl），映射为通用条目供前端按仓库安装
+        if ($requestPath -like "/mcpworld-search*") {
+            try {
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                $q = Get-QueryValue $requestPath "q"
+                $url = "https://www.mcpworld.com/api/mcp-market/servers?type=total_score_all&pn=1&pl=30"
+                if ($q) { $url = $url + "&wd=" + [Uri]::EscapeDataString($q) }
+                $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20 -UserAgent "Mozilla/5.0"
+                $data = $resp.Content | ConvertFrom-Json
+                $servers = @()
+                $mcpList = @($data.data.mcpList)
+                if ($mcpList.Count -ge 1) { $servers = @($mcpList[0].servers) }
+                $items = @()
+                foreach ($s in $servers) {
+                    $nm = [string]$s.serverName
+                    $desc = [string]$s.description
+                    $surl = [string]$s.serverUrl
+                    $stars = if ($s.star) { [int]$s.star } else { 0 }
+                    $repo = ""
+                    if ($surl -match 'github\.com/([^/\s]+)/([^/\s#?]+)') { $repo = $matches[1] + "/" + ($matches[2] -replace '\.git$', '') }
+                    $items += @{ name = $nm; description = $desc; url = $surl; stars = $stars; repo = $repo; source = "mcpworld" }
+                }
+                $body = @{ ok = $true; items = @($items) } | ConvertTo-Json -Depth 8
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "mcpworld-search exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message; items = @() } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
         if ($requestPath -eq "/affairs-action" -and $method -eq "POST") {
             try {
                 # 本轮：DingTalk 动作仅预览(dry-run)，不真正执行；将 $affairsLiveExecute 改为 $true 即可开启真实执行。
