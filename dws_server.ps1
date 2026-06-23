@@ -1830,6 +1830,31 @@ while ($true) {
             continue
         }
 
+        # 刷新简介：重新读取已安装技能的 SKILL.md frontmatter 写回 name/description，并回传 skillMd/readme 供前端可选地用大模型润色
+        if ($requestPath -eq "/skill-refresh-desc" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $dir = Resolve-SkillDir ([string]$payload.id)
+                $m = Read-SkillManifest $dir
+                if (-not $m) { throw "技能不存在。" }
+                $fm = Get-SkillFrontmatter (Join-Path $dir "SKILL.md")
+                if ($fm.description) {
+                    if ($m.PSObject.Properties.Name -contains 'description') { $m.description = $fm.description } else { $m | Add-Member -NotePropertyName 'description' -NotePropertyValue $fm.description -Force }
+                }
+                if ($fm.name -and -not ([string]$m.name)) { $m.name = $fm.name }
+                if ($m.PSObject.Properties.Name -contains 'updatedAt') { $m.updatedAt = (Get-Date).ToString("o") }
+                Write-SkillManifest $dir $m
+                $info = Get-SkillRepoInfo $dir
+                $body = @{ ok = $true; id = [string]$payload.id; manifest = $m; skillMd = $info.skillMd; readme = $info.readme; packageJson = $info.packageJson; files = $info.files; frontmatterDesc = $fm.description } | ConvertTo-Json -Depth 8
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "skill-refresh-desc exception: $($_.Exception.Message)"
+                $body = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            }
+            continue
+        }
+
         if ($requestPath -eq "/skill-delete" -and $method -eq "POST") {
             try {
                 $payload = $bodyText | ConvertFrom-Json
