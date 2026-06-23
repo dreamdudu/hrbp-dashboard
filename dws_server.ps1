@@ -520,6 +520,35 @@ function Get-SkillRepoInfo {
     return @{ files = $files; skillMd = $skillMd; readme = $readme; packageJson = $pkg }
 }
 
+# 解析 SKILL.md 的 YAML frontmatter，取 name / description（含块标量），用于安装时直接填充简介，无需大模型
+function Get-SkillFrontmatter {
+    param([string] $Path)
+    $res = @{ name = ""; description = "" }
+    try {
+        if (-not [System.IO.File]::Exists($Path)) { return $res }
+        $text = [System.IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
+        $m = [regex]::Match($text, '(?s)^﻿?---\s*\r?\n(.*?)\r?\n---')
+        if (-not $m.Success) { return $res }
+        $fm = $m.Groups[1].Value
+        $nm = [regex]::Match($fm, '(?im)^\s*name\s*:\s*(.+?)\s*$')
+        if ($nm.Success) { $res.name = ($nm.Groups[1].Value.Trim() -replace '^["'']','' -replace '["'']$','') }
+        $dm = [regex]::Match($fm, '(?im)^\s*description\s*:\s*(.*)$')
+        if ($dm.Success) {
+            $val = $dm.Groups[1].Value.Trim()
+            if ($val -eq '' -or $val -match '^[>|][-+]?\s*$') {
+                $lines = $fm -split "\r?\n"; $started = $false; $buf = @()
+                foreach ($ln in $lines) {
+                    if (-not $started) { if ($ln -match '(?i)^\s*description\s*:') { $started = $true }; continue }
+                    if ($ln -match '^\s+\S') { $buf += $ln.Trim() } elseif ($ln.Trim() -eq '') { } else { break }
+                }
+                $val = ($buf -join ' ').Trim()
+            } else { $val = $val -replace '^["'']','' -replace '["'']$','' }
+            $res.description = $val
+        }
+        return $res
+    } catch { return $res }
+}
+
 # 经 GitHub Contents API 递归下载某个子目录（只取该技能的文件，避免为一个子目录拉取整个大仓库）
 function Download-GithubSubdir {
     param([string] $Owner, [string] $Name, [string] $Ref, [string] $SubPath, [string] $DestDir)
@@ -621,9 +650,11 @@ function Install-SkillFromGithub {
     if ($exDir) { try { Remove-Item -LiteralPath $exDir -Recurse -Force } catch {} }
     $entry = Guess-SkillEntry $dest
     $contract = Get-SkillInitialContract $dest $entry
+    $fm = Get-SkillFrontmatter (Join-Path $dest "SKILL.md")
+    $skillName = if ($fm.name) { $fm.name } elseif ($SkillSlug) { $SkillSlug } else { $name }
     $now = (Get-Date).ToString("o")
     $manifest = [ordered]@{
-        id = $id; kind = "skill"; name = $(if ($SkillSlug) { $SkillSlug } else { $name }); icon = "🧩"; description = ""; runtime = $contract.runtime; entry = $entry;
+        id = $id; kind = "skill"; name = $skillName; icon = "🧩"; description = $fm.description; runtime = $contract.runtime; entry = $entry;
         inputHint = ""; outputHint = ""; inputMode = $contract.inputMode; cliGuide = ""; dependencies = @($contract.dependencies); defaultArgs = @($contract.defaultArgs); globalOptions = @($contract.globalOptions); trusted = $false; version = "";
         source = [ordered]@{ type = "github"; repo = $Repo; ref = $okRef; skill = $SkillSlug; path = $SkillPath; url = "https://github.com/$Repo" };
         installedAt = $now; updatedAt = $now
