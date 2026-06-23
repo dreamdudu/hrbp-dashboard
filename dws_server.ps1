@@ -453,6 +453,10 @@ function Get-SkillInitialContract {
     if ($entryPath -and [System.IO.File]::Exists($entryPath)) {
         try { $code = [System.IO.File]::ReadAllText($entryPath, [Text.Encoding]::UTF8) } catch {}
     }
+    if (-not $Entry -and [System.IO.File]::Exists((Join-Path $Dir "SKILL.md"))) {
+        $runtime = "prompt"
+        $inputMode = "prompt"
+    }
     if ($runtime -eq "python") {
         if ($code -match '\bargparse\b|add_subparsers\s*\(|sys\.argv') { $inputMode = "cli" }
         elseif ($code -match 'sys\.stdin|input\s*\(') { $inputMode = "stdin" }
@@ -1909,6 +1913,8 @@ while ($true) {
                 if ((-not ([bool]$m.trusted)) -and (-not $confirmed)) { throw "该技能尚未确认信任，请先确认后再运行。" }
                 $runtime = if ($m.runtime) { [string]$m.runtime } else { "node" }
                 $entry = [string]$m.entry
+                $inputMode = if ($m.PSObject.Properties.Name -contains 'inputMode' -and $m.inputMode) { [string]$m.inputMode } else { "workspace" }
+                if ($inputMode -eq "prompt") { throw "该技能是提示词型 Skill，需要由大模型执行。" }
                 if (-not $entry) { throw "未配置入口文件 entry。" }
                 $entryPath = Join-Path $dir $entry
                 if (-not [System.IO.File]::Exists($entryPath)) { throw "入口文件不存在：$entry" }
@@ -1924,7 +1930,6 @@ while ($true) {
                 $inputText = [string]$payload.input
                 try { [System.IO.File]::WriteAllText((Join-Path $work "input.txt"), $inputText, (New-Object System.Text.UTF8Encoding($false))) } catch {}
                 $exe = $null; $argLine = $null; $runtimePath = ""
-                $inputMode = if ($m.PSObject.Properties.Name -contains 'inputMode' -and $m.inputMode) { [string]$m.inputMode } else { "workspace" }
                 $runArgs = @()
                 if ($payload.PSObject.Properties.Name -contains 'args' -and $payload.args) { $runArgs = @($payload.args) | ForEach-Object { [string]$_ } }
                 if ($inputMode -eq "cli" -and $m.PSObject.Properties.Name -contains 'defaultArgs') {
