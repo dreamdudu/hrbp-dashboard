@@ -55,6 +55,16 @@ function Write-ServerLog {
     } catch {}
 }
 
+function Get-WebResponseUtf8Content {
+    param($Response)
+    if ($null -ne $Response -and $null -ne $Response.RawContentStream) {
+        try {
+            return [Text.Encoding]::UTF8.GetString($Response.RawContentStream.ToArray())
+        } catch {}
+    }
+    return [string]$Response.Content
+}
+
 function Ensure-DataStore {
     if (-not [System.IO.Directory]::Exists($dataDir)) {
         [void][System.IO.Directory]::CreateDirectory($dataDir)
@@ -310,6 +320,103 @@ function Write-SkillManifest {
     [System.IO.File]::WriteAllText($mf, $json, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+function Quote-ProcessArgument {
+    param([string] $Value)
+    if ($null -eq $Value) { return '""' }
+    return '"' + ($Value -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
+}
+
+function Get-UsablePython {
+    $candidates = @()
+    foreach ($name in @("python", "py")) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source) { $candidates += $cmd.Source }
+    }
+    if ($env:USERPROFILE) {
+        $candidates += (Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe")
+    }
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (-not $candidate -or -not [System.IO.File]::Exists($candidate)) { continue }
+        if ($candidate -match '\\WindowsApps\\python(?:3)?\.exe$') { continue }
+        try {
+            $si = [System.Diagnostics.ProcessStartInfo]::new()
+            $si.FileName = $candidate
+            $si.Arguments = "--version"
+            $si.UseShellExecute = $false
+            $si.RedirectStandardOutput = $true
+            $si.RedirectStandardError = $true
+            $pr = [System.Diagnostics.Process]::new()
+            $pr.StartInfo = $si
+            [void]$pr.Start()
+            if ($pr.WaitForExit(5000) -and $pr.ExitCode -eq 0) { return $candidate }
+            try { $pr.Kill() } catch {}
+        } catch {}
+    }
+    return $null
+}
+
+function Ensure-SkillPythonDependencies {
+    param([string] $Dir, [string] $PythonExe, $Dependencies)
+    $deps = @($Dependencies) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    if (-not $deps.Count) { return "" }
+    $runtimeDir = Join-Path $Dir ".runtime\python"
+    if (-not [System.IO.Directory]::Exists($runtimeDir)) { [void][System.IO.Directory]::CreateDirectory($runtimeDir) }
+    $stampPath = Join-Path $runtimeDir ".dependencies.json"
+    $wanted = ($deps | ConvertTo-Json -Compress)
+    $current = if ([System.IO.File]::Exists($stampPath)) { [System.IO.File]::ReadAllText($stampPath, [Text.Encoding]::UTF8) } else { "" }
+    if ($current -ne $wanted) {
+        $si = [System.Diagnostics.ProcessStartInfo]::new()
+        $si.FileName = $PythonExe
+        $argParts = @("-m", "pip", "install", "--disable-pip-version-check", "--target", $runtimeDir) + $deps
+        $si.Arguments = ($argParts | ForEach-Object { Quote-ProcessArgument $_ }) -join " "
+        $si.WorkingDirectory = $Dir
+        $si.UseShellExecute = $false
+        $si.RedirectStandardOutput = $true
+        $si.RedirectStandardError = $true
+        $si.StandardOutputEncoding = [Text.Encoding]::UTF8
+        $si.StandardErrorEncoding = [Text.Encoding]::UTF8
+        $pr = [System.Diagnostics.Process]::new()
+        $pr.StartInfo = $si
+        [void]$pr.Start()
+        $outTask = $pr.StandardOutput.ReadToEndAsync()
+        $errTask = $pr.StandardError.ReadToEndAsync()
+        if (-not $pr.WaitForExit(180000)) { try { $pr.Kill() } catch {}; throw "安装 Python 依赖超时。" }
+        if ($pr.ExitCode -ne 0) { throw "安装 Python 依赖失败：$($errTask.Result)$($outTask.Result)" }
+        [System.IO.File]::WriteAllText($stampPath, $wanted, (New-Object System.Text.UTF8Encoding($false)))
+    }
+    return $runtimeDir
+}
+
+function Ensure-SkillNodeDependencies {
+    param([string] $Dir)
+    $pkgPath = Join-Path $Dir "package.json"
+    if (-not [System.IO.File]::Exists($pkgPath)) { return }
+    try {
+        $pkg = [System.IO.File]::ReadAllText($pkgPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $hasDeps = $pkg.dependencies -and $pkg.dependencies.PSObject.Properties.Count
+    } catch { $hasDeps = $false }
+    if (-not $hasDeps -or [System.IO.Directory]::Exists((Join-Path $Dir "node_modules"))) { return }
+    $npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
+    if (-not $npm) { $npm = (Get-Command npm -ErrorAction SilentlyContinue).Source }
+    if (-not $npm) { throw "该技能需要 Node 依赖，但未找到 npm。" }
+    $si = [System.Diagnostics.ProcessStartInfo]::new()
+    $si.FileName = $npm
+    $si.Arguments = "install --omit=dev --no-audit --no-fund"
+    $si.WorkingDirectory = $Dir
+    $si.UseShellExecute = $false
+    $si.RedirectStandardOutput = $true
+    $si.RedirectStandardError = $true
+    $si.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $si.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $pr = [System.Diagnostics.Process]::new()
+    $pr.StartInfo = $si
+    [void]$pr.Start()
+    $outTask = $pr.StandardOutput.ReadToEndAsync()
+    $errTask = $pr.StandardError.ReadToEndAsync()
+    if (-not $pr.WaitForExit(180000)) { try { $pr.Kill() } catch {}; throw "安装 Node 依赖超时。" }
+    if ($pr.ExitCode -ne 0) { throw "安装 Node 依赖失败：$($errTask.Result)$($outTask.Result)" }
+}
+
 # 猜测技能入口：package.json → 常见入口 → scripts 目录 → 首个可执行脚本
 function Guess-SkillEntry {
     param([string] $Dir)
@@ -332,6 +439,50 @@ function Guess-SkillEntry {
         if ($files.Count -ge 1) { return $files[0].Substring($Dir.Length).TrimStart('\', '/').Replace('\', '/') }
     }
     return ""
+}
+
+function Get-SkillInitialContract {
+    param([string] $Dir, [string] $Entry)
+    $runtime = if ($Entry -match '\.py$') { "python" } elseif ($Entry -match '\.ps1$') { "powershell" } else { "node" }
+    $inputMode = "workspace"
+    $dependencies = @()
+    $entryPath = if ($Entry) { Join-Path $Dir $Entry } else { "" }
+    $code = ""
+    if ($entryPath -and [System.IO.File]::Exists($entryPath)) {
+        try { $code = [System.IO.File]::ReadAllText($entryPath, [Text.Encoding]::UTF8) } catch {}
+    }
+    if ($runtime -eq "python") {
+        if ($code -match '\bargparse\b|add_subparsers\s*\(|sys\.argv') { $inputMode = "cli" }
+        elseif ($code -match 'sys\.stdin|input\s*\(') { $inputMode = "stdin" }
+        $requirements = Join-Path $Dir "requirements.txt"
+        if ([System.IO.File]::Exists($requirements)) {
+            try {
+                $dependencies += [System.IO.File]::ReadAllLines($requirements, [Text.Encoding]::UTF8) |
+                    ForEach-Object { ($_ -split '\s+#', 2)[0].Trim() } |
+                    Where-Object { $_ -and -not $_.StartsWith("#") -and -not $_.StartsWith("-") }
+            } catch {}
+        }
+        $commonImports = [ordered]@{
+            requests = "requests>=2.31"
+            yaml = "PyYAML>=6"
+            bs4 = "beautifulsoup4>=4.12"
+            PIL = "Pillow>=10"
+            openpyxl = "openpyxl>=3.1"
+            pandas = "pandas>=2"
+            httpx = "httpx>=0.27"
+        }
+        foreach ($module in $commonImports.Keys) {
+            if ($code -match "(?m)^\s*(?:from\s+$([regex]::Escape($module))\b|import\s+$([regex]::Escape($module))\b)") {
+                $dependencies += $commonImports[$module]
+            }
+        }
+    } elseif ($runtime -eq "node") {
+        if ($code -match '\bprocess\.argv\b|\bcommander\b|\byargs\b') { $inputMode = "cli" }
+        elseif ($code -match '\bprocess\.stdin\b') { $inputMode = "stdin" }
+    } elseif ($code -match '\bparam\s*\(') {
+        $inputMode = "cli"
+    }
+    return @{ runtime = $runtime; inputMode = $inputMode; dependencies = @($dependencies | Select-Object -Unique) }
 }
 
 # 采集仓库内说明性文件与文件树，供前端大模型蒸馏 manifest
@@ -419,10 +570,11 @@ function Install-SkillFromGithub {
     Move-Item -LiteralPath $srcRoot -Destination $dest
     try { Remove-Item -LiteralPath $exDir -Recurse -Force } catch {}
     $entry = Guess-SkillEntry $dest
+    $contract = Get-SkillInitialContract $dest $entry
     $now = (Get-Date).ToString("o")
     $manifest = [ordered]@{
-        id = $id; kind = "skill"; name = $(if ($SkillSlug) { $SkillSlug } else { $name }); icon = "🧩"; description = ""; runtime = "node"; entry = $entry;
-        inputHint = ""; outputHint = ""; trusted = $false; version = "";
+        id = $id; kind = "skill"; name = $(if ($SkillSlug) { $SkillSlug } else { $name }); icon = "🧩"; description = ""; runtime = $contract.runtime; entry = $entry;
+        inputHint = ""; outputHint = ""; inputMode = $contract.inputMode; cliGuide = ""; dependencies = @($contract.dependencies); trusted = $false; version = "";
         source = [ordered]@{ type = "github"; repo = $Repo; ref = $okRef; skill = $SkillSlug; path = $SkillPath; url = "https://github.com/$Repo" };
         installedAt = $now; updatedAt = $now
     }
@@ -466,12 +618,12 @@ function Install-SkillFromArchive {
         if ([System.IO.Directory]::Exists($dest)) { Remove-Item -LiteralPath $dest -Recurse -Force }
         Move-Item -LiteralPath $srcRoot -Destination $dest
         $entry = Guess-SkillEntry $dest
-        $runtime = if ($entry -match '\.py$') { "python" } elseif ($entry -match '\.ps1$') { "powershell" } else { "node" }
+        $contract = Get-SkillInitialContract $dest $entry
         $now = (Get-Date).ToString("o")
         $manifest = [ordered]@{
             id = $id; kind = "skill"; name = $(if ($Name) { $Name } else { $id }); icon = "🧩";
-            description = $Description; runtime = $runtime; entry = $entry;
-            inputHint = ""; outputHint = ""; trusted = $false; version = $Version;
+            description = $Description; runtime = $contract.runtime; entry = $entry;
+            inputHint = ""; outputHint = ""; inputMode = $contract.inputMode; cliGuide = ""; dependencies = @($contract.dependencies); trusted = $false; version = $Version;
             source = [ordered]@{ type = "market"; provider = $Provider; id = $SkillId; url = $DetailUrl; downloadUrl = $DownloadUrl };
             installedAt = $now; updatedAt = $now
         }
@@ -1422,12 +1574,14 @@ while ($true) {
                     if ($q) {
                         $url = "https://skillsmp.com/api/v1/skills/search?q=" + [Uri]::EscapeDataString($q) + "&page=1&limit=20&sortBy=stars"
                         $remote = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers @{ Accept = "application/json"; "User-Agent" = "HRBP-Dashboard" } -TimeoutSec 30
-                        $payload = $remote.Content | ConvertFrom-Json
+                        # SkillsMP omits charset=utf-8. PowerShell 5.1 otherwise decodes
+                        # its UTF-8 JSON with a legacy code page and corrupts Chinese text.
+                        $payload = (Get-WebResponseUtf8Content $remote) | ConvertFrom-Json
                         if (-not $payload.success) { throw "SkillsMP 搜索失败。" }
                         $items = @($payload.data.skills)
                     } else {
                         $remote = Invoke-WebRequest -Uri "https://skillsmp.com/search?sortBy=stars" -UseBasicParsing -Headers @{ "User-Agent" = "HRBP-Dashboard" } -TimeoutSec 30
-                        $matches = [regex]::Matches($remote.Content, '<a[^>]+href="(/creators/[^"]+)"[^>]*>([\s\S]*?)</a>')
+                        $matches = [regex]::Matches((Get-WebResponseUtf8Content $remote), '<a[^>]+href="(/creators/[^"]+)"[^>]*>([\s\S]*?)</a>')
                         $seen = @{}
                         foreach ($m in $matches) {
                             $detailPath = $m.Groups[1].Value
@@ -1448,7 +1602,7 @@ while ($true) {
                             $detailUrl = "https://skillsmp.com$detailPath"
                             try {
                                 $detail = Invoke-WebRequest -Uri $detailUrl -UseBasicParsing -Headers @{ "User-Agent" = "HRBP-Dashboard" } -TimeoutSec 20
-                                $githubMatch = [regex]::Match($detail.Content, 'href="(https://github\.com/[^"]+/tree/[^"]+)"')
+                                $githubMatch = [regex]::Match((Get-WebResponseUtf8Content $detail), 'href="(https://github\.com/[^"]+/tree/[^"]+)"')
                                 $githubUrl = if ($githubMatch.Success) { [Net.WebUtility]::HtmlDecode($githubMatch.Groups[1].Value) } else { "https://github.com/$repo" }
                             } catch { $githubUrl = "https://github.com/$repo" }
                             $items += [ordered]@{ id = ($detailPath.Trim('/') -replace '/', '-'); name = $name; description = $description; githubUrl = $githubUrl; skillUrl = $detailUrl; stars = $stars }
@@ -1558,11 +1712,21 @@ while ($true) {
                 $dir = Resolve-SkillDir ([string]$payload.id)
                 $m = Read-SkillManifest $dir
                 if (-not $m) { throw "技能不存在。" }
-                foreach ($k in @('name', 'icon', 'description', 'runtime', 'entry', 'inputHint', 'outputHint', 'version')) {
+                foreach ($k in @('name', 'icon', 'description', 'runtime', 'entry', 'inputHint', 'outputHint', 'version', 'inputMode', 'cliGuide')) {
                     if ($payload.PSObject.Properties.Name -contains $k) {
                         if ($m.PSObject.Properties.Name -contains $k) { $m.$k = [string]$payload.$k }
                         else { $m | Add-Member -NotePropertyName $k -NotePropertyValue ([string]$payload.$k) -Force }
                     }
+                }
+                if ($payload.PSObject.Properties.Name -contains 'dependencies') {
+                    $depsValue = @($payload.dependencies) | ForEach-Object { [string]$_ } | Where-Object { $_ }
+                    if ($m.PSObject.Properties.Name -contains 'dependencies') { $m.dependencies = $depsValue }
+                    else { $m | Add-Member -NotePropertyName 'dependencies' -NotePropertyValue $depsValue -Force }
+                }
+                if ($payload.PSObject.Properties.Name -contains 'globalOptions') {
+                    $globalValue = @($payload.globalOptions)
+                    if ($m.PSObject.Properties.Name -contains 'globalOptions') { $m.globalOptions = $globalValue }
+                    else { $m | Add-Member -NotePropertyName 'globalOptions' -NotePropertyValue $globalValue -Force }
                 }
                 if ($payload.PSObject.Properties.Name -contains 'trusted') {
                     if ($m.PSObject.Properties.Name -contains 'trusted') { $m.trusted = [bool]$payload.trusted }
@@ -1608,12 +1772,13 @@ while ($true) {
                     }
                 }
                 $deps = @()
+                if ($m.PSObject.Properties.Name -contains 'dependencies') { $deps += @($m.dependencies) }
                 $pkg = Join-Path $dir "package.json"
                 if ([System.IO.File]::Exists($pkg)) {
                     try { $p = [System.IO.File]::ReadAllText($pkg, [Text.Encoding]::UTF8) | ConvertFrom-Json; if ($p.dependencies) { foreach ($k in $p.dependencies.PSObject.Properties.Name) { $deps += ($k + "@" + [string]$p.dependencies.$k) } } } catch {}
                 }
                 $info = Get-SkillRepoInfo $dir
-                $body = @{ ok = $true; manifest = $m; entry = [string]$m.entry; entryCode = $entryCode; deps = @($deps); files = @($info.files) } | ConvertTo-Json -Depth 8
+                $body = @{ ok = $true; manifest = $m; entry = [string]$m.entry; entryCode = $entryCode; deps = @($deps | Select-Object -Unique); files = @($info.files); skillMd = $info.skillMd; readme = $info.readme } | ConvertTo-Json -Depth 8
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
             } catch {
                 Write-ServerLog "skill-inspect exception: $($_.Exception.Message)"
@@ -1647,17 +1812,57 @@ while ($true) {
                 }
                 $inputText = [string]$payload.input
                 try { [System.IO.File]::WriteAllText((Join-Path $work "input.txt"), $inputText, (New-Object System.Text.UTF8Encoding($false))) } catch {}
-                $exe = $null; $argLine = $null
+                $exe = $null; $argLine = $null; $runtimePath = ""
+                $inputMode = if ($m.PSObject.Properties.Name -contains 'inputMode' -and $m.inputMode) { [string]$m.inputMode } else { "workspace" }
+                $runArgs = @()
+                if ($payload.PSObject.Properties.Name -contains 'args' -and $payload.args) { $runArgs = @($payload.args) | ForEach-Object { [string]$_ } }
+                if ($inputMode -eq "cli" -and $m.PSObject.Properties.Name -contains 'globalOptions' -and $runArgs.Count) {
+                    $globalSpecs = @($m.globalOptions)
+                    $prefixArgs = @()
+                    $keptArgs = @()
+                    for ($ri = 0; $ri -lt $runArgs.Count; $ri++) {
+                        $arg = $runArgs[$ri]
+                        $spec = $globalSpecs | Where-Object { [string]$_.name -eq $arg } | Select-Object -First 1
+                        if ($spec) {
+                            $prefixArgs += $arg
+                            if ([bool]$spec.takesValue -and ($ri + 1) -lt $runArgs.Count) { $ri++; $prefixArgs += $runArgs[$ri] }
+                        } else {
+                            $keptArgs += $arg
+                        }
+                    }
+                    $runArgs = $prefixArgs + $keptArgs
+                }
                 switch ($runtime) {
-                    "python" { $exe = (Get-Command python -ErrorAction SilentlyContinue).Source; if (-not $exe) { $exe = (Get-Command py -ErrorAction SilentlyContinue).Source }; $argLine = '"' + $entryPath + '" "' + $work + '"' }
-                    "powershell" { $exe = "powershell.exe"; $argLine = '-NoProfile -ExecutionPolicy Bypass -File "' + $entryPath + '" "' + $work + '"' }
-                    default { $exe = (Get-Command node -ErrorAction SilentlyContinue).Source; $argLine = '"' + $entryPath + '" "' + $work + '"' }
+                    "python" {
+                        $exe = Get-UsablePython
+                        if ($exe) { $runtimePath = Ensure-SkillPythonDependencies $dir $exe $m.dependencies }
+                    }
+                    "powershell" { $exe = "powershell.exe" }
+                    default {
+                        $exe = (Get-Command node -ErrorAction SilentlyContinue).Source
+                        if ($exe) { Ensure-SkillNodeDependencies $dir }
+                    }
                 }
                 if (-not $exe) { throw "未找到运行时：$runtime" }
+                $parts = @()
+                if ($runtime -eq "powershell") { $parts += @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File") }
+                $parts += $entryPath
+                if ($inputMode -eq "cli") {
+                    if (-not $runArgs.Count) { throw "该技能需要 CLI 参数，但未生成可执行参数。" }
+                    $parts += $runArgs
+                } elseif ($inputMode -eq "workspace") {
+                    $parts += $work
+                }
+                $argLine = ($parts | ForEach-Object { Quote-ProcessArgument $_ }) -join " "
                 $si = [System.Diagnostics.ProcessStartInfo]::new()
                 $si.FileName = $exe; $si.Arguments = $argLine; $si.WorkingDirectory = $dir
                 $si.UseShellExecute = $false; $si.RedirectStandardInput = $true; $si.RedirectStandardOutput = $true; $si.RedirectStandardError = $true
                 $si.StandardOutputEncoding = [Text.Encoding]::UTF8; $si.StandardErrorEncoding = [Text.Encoding]::UTF8
+                if ($runtimePath) {
+                    $oldPythonPath = [Environment]::GetEnvironmentVariable("PYTHONPATH")
+                    $si.EnvironmentVariables["PYTHONPATH"] = if ($oldPythonPath) { $runtimePath + [IO.Path]::PathSeparator + $oldPythonPath } else { $runtimePath }
+                    $si.EnvironmentVariables["PYTHONUTF8"] = "1"
+                }
                 $pr = [System.Diagnostics.Process]::new(); $pr.StartInfo = $si; [void]$pr.Start()
                 try { $inBytes = [Text.Encoding]::UTF8.GetBytes($inputText); $pr.StandardInput.BaseStream.Write($inBytes, 0, $inBytes.Length); $pr.StandardInput.BaseStream.Flush(); $pr.StandardInput.Close() } catch {}
                 $outTask = $pr.StandardOutput.ReadToEndAsync()
