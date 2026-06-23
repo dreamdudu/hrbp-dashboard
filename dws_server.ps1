@@ -446,6 +446,8 @@ function Get-SkillInitialContract {
     $runtime = if ($Entry -match '\.py$') { "python" } elseif ($Entry -match '\.ps1$') { "powershell" } else { "node" }
     $inputMode = "workspace"
     $dependencies = @()
+    $defaultArgs = @()
+    $globalOptions = @()
     $entryPath = if ($Entry) { Join-Path $Dir $Entry } else { "" }
     $code = ""
     if ($entryPath -and [System.IO.File]::Exists($entryPath)) {
@@ -454,6 +456,13 @@ function Get-SkillInitialContract {
     if ($runtime -eq "python") {
         if ($code -match '\bargparse\b|add_subparsers\s*\(|sys\.argv') { $inputMode = "cli" }
         elseif ($code -match 'sys\.stdin|input\s*\(') { $inputMode = "stdin" }
+        $jsonArgPos = $code.IndexOf('add_argument("--json"')
+        if ($jsonArgPos -lt 0) { $jsonArgPos = $code.IndexOf("add_argument('--json'") }
+        $subparserPos = $code.IndexOf("add_subparsers")
+        if ($inputMode -eq "cli" -and $jsonArgPos -ge 0 -and ($subparserPos -lt 0 -or $jsonArgPos -lt $subparserPos)) {
+            $defaultArgs += "--json"
+            $globalOptions += [ordered]@{ name = "--json"; takesValue = $false }
+        }
         $requirements = Join-Path $Dir "requirements.txt"
         if ([System.IO.File]::Exists($requirements)) {
             try {
@@ -482,7 +491,7 @@ function Get-SkillInitialContract {
     } elseif ($code -match '\bparam\s*\(') {
         $inputMode = "cli"
     }
-    return @{ runtime = $runtime; inputMode = $inputMode; dependencies = @($dependencies | Select-Object -Unique) }
+    return @{ runtime = $runtime; inputMode = $inputMode; dependencies = @($dependencies | Select-Object -Unique); defaultArgs = $defaultArgs; globalOptions = $globalOptions }
 }
 
 # 采集仓库内说明性文件与文件树，供前端大模型蒸馏 manifest
@@ -574,7 +583,7 @@ function Install-SkillFromGithub {
     $now = (Get-Date).ToString("o")
     $manifest = [ordered]@{
         id = $id; kind = "skill"; name = $(if ($SkillSlug) { $SkillSlug } else { $name }); icon = "🧩"; description = ""; runtime = $contract.runtime; entry = $entry;
-        inputHint = ""; outputHint = ""; inputMode = $contract.inputMode; cliGuide = ""; dependencies = @($contract.dependencies); trusted = $false; version = "";
+        inputHint = ""; outputHint = ""; inputMode = $contract.inputMode; cliGuide = ""; dependencies = @($contract.dependencies); defaultArgs = @($contract.defaultArgs); globalOptions = @($contract.globalOptions); trusted = $false; version = "";
         source = [ordered]@{ type = "github"; repo = $Repo; ref = $okRef; skill = $SkillSlug; path = $SkillPath; url = "https://github.com/$Repo" };
         installedAt = $now; updatedAt = $now
     }
@@ -623,7 +632,7 @@ function Install-SkillFromArchive {
         $manifest = [ordered]@{
             id = $id; kind = "skill"; name = $(if ($Name) { $Name } else { $id }); icon = "🧩";
             description = $Description; runtime = $contract.runtime; entry = $entry;
-            inputHint = ""; outputHint = ""; inputMode = $contract.inputMode; cliGuide = ""; dependencies = @($contract.dependencies); trusted = $false; version = $Version;
+            inputHint = ""; outputHint = ""; inputMode = $contract.inputMode; cliGuide = ""; dependencies = @($contract.dependencies); defaultArgs = @($contract.defaultArgs); globalOptions = @($contract.globalOptions); trusted = $false; version = $Version;
             source = [ordered]@{ type = "market"; provider = $Provider; id = $SkillId; url = $DetailUrl; downloadUrl = $DownloadUrl };
             installedAt = $now; updatedAt = $now
         }
@@ -1728,6 +1737,11 @@ while ($true) {
                     if ($m.PSObject.Properties.Name -contains 'globalOptions') { $m.globalOptions = $globalValue }
                     else { $m | Add-Member -NotePropertyName 'globalOptions' -NotePropertyValue $globalValue -Force }
                 }
+                if ($payload.PSObject.Properties.Name -contains 'defaultArgs') {
+                    $defaultValue = @($payload.defaultArgs) | ForEach-Object { [string]$_ } | Where-Object { $_ }
+                    if ($m.PSObject.Properties.Name -contains 'defaultArgs') { $m.defaultArgs = $defaultValue }
+                    else { $m | Add-Member -NotePropertyName 'defaultArgs' -NotePropertyValue $defaultValue -Force }
+                }
                 if ($payload.PSObject.Properties.Name -contains 'trusted') {
                     if ($m.PSObject.Properties.Name -contains 'trusted') { $m.trusted = [bool]$payload.trusted }
                     else { $m | Add-Member -NotePropertyName 'trusted' -NotePropertyValue ([bool]$payload.trusted) -Force }
@@ -1816,6 +1830,12 @@ while ($true) {
                 $inputMode = if ($m.PSObject.Properties.Name -contains 'inputMode' -and $m.inputMode) { [string]$m.inputMode } else { "workspace" }
                 $runArgs = @()
                 if ($payload.PSObject.Properties.Name -contains 'args' -and $payload.args) { $runArgs = @($payload.args) | ForEach-Object { [string]$_ } }
+                if ($inputMode -eq "cli" -and $m.PSObject.Properties.Name -contains 'defaultArgs') {
+                    foreach ($defaultArg in @($m.defaultArgs)) {
+                        $defaultText = [string]$defaultArg
+                        if ($defaultText -and $runArgs -notcontains $defaultText) { $runArgs += $defaultText }
+                    }
+                }
                 if ($inputMode -eq "cli" -and $m.PSObject.Properties.Name -contains 'globalOptions' -and $runArgs.Count) {
                     $globalSpecs = @($m.globalOptions)
                     $prefixArgs = @()
