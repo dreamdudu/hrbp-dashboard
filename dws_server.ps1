@@ -434,6 +434,19 @@ function Guess-SkillEntry {
     foreach ($cand in @("index.js", "main.js", "skill.js", "cli.js", "index.py", "main.py", "skill.py", "cli.py", "main.ps1", "skill.ps1")) {
         if ([System.IO.File]::Exists((Join-Path $Dir $cand))) { return $cand }
     }
+    # SKILL.md 驱动的 Claude 技能：没有显式入口时按提示词型处理，
+    # 不要把模板/资产里的随机 .js（如浏览器自定义元素 deck-stage.js）误当作可执行入口。
+    if ([System.IO.File]::Exists((Join-Path $Dir "SKILL.md"))) { return "" }
+    # 顶层常见可执行目录优先，避免抓到 templates/assets 等资产目录里的脚本
+    foreach ($sub in @("", "scripts", "bin", "src")) {
+        $base = if ($sub) { Join-Path $Dir $sub } else { $Dir }
+        if (-not [System.IO.Directory]::Exists($base)) { continue }
+        foreach ($ext in @("*.js", "*.mjs", "*.py", "*.ps1")) {
+            $files = [System.IO.Directory]::GetFiles($base, $ext, [System.IO.SearchOption]::TopDirectoryOnly)
+            if ($files.Count -ge 1) { return $files[0].Substring($Dir.Length).TrimStart('\', '/').Replace('\', '/') }
+        }
+    }
+    # 兜底：全树搜索（仅当无 SKILL.md 时才会走到这里）
     foreach ($ext in @("*.js", "*.mjs", "*.py", "*.ps1")) {
         $files = [System.IO.Directory]::GetFiles($Dir, $ext, [System.IO.SearchOption]::AllDirectories)
         if ($files.Count -ge 1) { return $files[0].Substring($Dir.Length).TrimStart('\', '/').Replace('\', '/') }
@@ -1597,6 +1610,48 @@ while ($true) {
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
             } catch {
                 Write-ServerLog "affairs-extract exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message; text = "" } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/url-extract" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $url = [string]$payload.url
+                if ([string]::IsNullOrWhiteSpace($url)) { throw "Missing url." }
+                if ($url -notmatch '^(?i)https?://') { throw "仅支持 http/https 链接" }
+                $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30 -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" -Headers @{ "Accept-Language" = "zh-CN,zh;q=0.9,en;q=0.8" }
+                $html = [string]$resp.Content
+                # 提取标题
+                $title = ""
+                $mt = [regex]::Match($html, '(?is)<title[^>]*>(.*?)</title>')
+                if ($mt.Success) { $title = $mt.Groups[1].Value.Trim() }
+                # 去掉脚本/样式/注释/head 噪声
+                $txt = $html
+                $txt = [regex]::Replace($txt, '(?is)<script[^>]*>.*?</script>', ' ')
+                $txt = [regex]::Replace($txt, '(?is)<style[^>]*>.*?</style>', ' ')
+                $txt = [regex]::Replace($txt, '(?is)<noscript[^>]*>.*?</noscript>', ' ')
+                $txt = [regex]::Replace($txt, '(?is)<!--.*?-->', ' ')
+                # 块级标签转换行
+                $txt = [regex]::Replace($txt, '(?is)<br\s*/?>', "`n")
+                $txt = [regex]::Replace($txt, '(?is)</(p|div|li|tr|h[1-6]|section|article|blockquote)>', "`n")
+                # 去掉剩余标签
+                $txt = [regex]::Replace($txt, '(?s)<[^>]+>', ' ')
+                # 解码 HTML 实体
+                $txt = [System.Net.WebUtility]::HtmlDecode($txt)
+                # 规整空白
+                $txt = [regex]::Replace($txt, '[ \t\f\r]+', ' ')
+                $txt = [regex]::Replace($txt, ' *\n *', "`n")
+                $txt = [regex]::Replace($txt, '\n{3,}', "`n`n").Trim()
+                if ($title) { $txt = $title.Trim() + "`n`n" + $txt }
+                $max = 30000
+                if ($txt.Length -gt $max) { $txt = $txt.Substring(0, $max) + "`n…（内容过长，已截断）" }
+                $body = @{ ok = $true; url = $url; title = $title; text = $txt; chars = $txt.Length } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                Write-ServerLog "url-extract exception: $($_.Exception.Message)"
                 $message = @{ ok = $false; error = $_.Exception.Message; text = "" } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
