@@ -2135,11 +2135,11 @@ while ($true) {
                 if ($existing) {
                     $dName = $existing.name; $dIcon = $existing.icon; $dDesc = $existing.description; $dTransport = $existing.transport
                     $dCommand = $existing.command; $dArgs = $existing.args; $dEnv = $existing.env; $dUrl = $existing.url; $dHeaders = $existing.headers
-                    $dTrust = [bool]$existing.trusted; $dSource = $existing.source
+                    $dTrust = [bool]$existing.trusted; $dSource = $existing.source; $dJson = $existing.jsonConfig
                 } else {
                     $dName = $id; $dIcon = '🔌'; $dDesc = ''; $dTransport = 'stdio'
                     $dCommand = ''; $dArgs = @(); $dEnv = @{}; $dUrl = ''; $dHeaders = @{}
-                    $dTrust = $false; $dSource = @{ type = 'manual' }
+                    $dTrust = $false; $dSource = @{ type = 'manual' }; $dJson = ''
                 }
                 $m = [ordered]@{
                     id          = $id; kind = "mcp"
@@ -2152,6 +2152,7 @@ while ($true) {
                     env         = (Pg $p 'env' $dEnv)
                     url         = [string](Pg $p 'url' $dUrl)
                     headers     = (Pg $p 'headers' $dHeaders)
+                    jsonConfig  = [string](Pg $p 'jsonConfig' $dJson)
                     trusted     = [bool](Pg $p 'trusted' $dTrust)
                     source      = (Pg $p 'source' $dSource)
                     installedAt = $instAt; updatedAt = $now
