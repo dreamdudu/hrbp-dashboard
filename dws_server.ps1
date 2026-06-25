@@ -568,21 +568,26 @@ function Get-SkillFrontmatter {
 
 # 经 GitHub Contents API 递归下载某个子目录（只取该技能的文件，避免为一个子目录拉取整个大仓库）
 function Download-GithubSubdir {
-    param([string] $Owner, [string] $Name, [string] $Ref, [string] $SubPath, [string] $DestDir)
-    $encPath = (($SubPath -split '/') | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/'
-    $api = ("https://api.github.com/repos/{0}/{1}/contents/{2}?ref={3}" -f $Owner, $Name, $encPath, [Uri]::EscapeDataString($Ref))
+    param([string] $Owner, [string] $Name, [string] $Ref, [string] $SubPath, [string] $DestDir, [bool] $Lean = $false)
+    $encPath = (($SubPath -split '/') | Where-Object { $_ -ne '' } | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/'
+    $api = if ($encPath) { "https://api.github.com/repos/$Owner/$Name/contents/$encPath" + "?ref=" + [Uri]::EscapeDataString($Ref) } else { "https://api.github.com/repos/$Owner/$Name/contents" + "?ref=" + [Uri]::EscapeDataString($Ref) }
     $hdr = @{ "User-Agent" = "HRBP-Dashboard"; "Accept" = "application/vnd.github+json" }
     $resp = Invoke-WebRequest -Uri $api -UseBasicParsing -Headers $hdr -TimeoutSec 30
     $items = @($resp.Content | ConvertFrom-Json)
     if (-not [System.IO.Directory]::Exists($DestDir)) { [void][System.IO.Directory]::CreateDirectory($DestDir) }
+    # 精简模式：跳过示例/构建/媒体等无关大目录与超大文件，避免为巨型仓库下载整包（话术类技能常带数百 MB 的 demos）
+    $denyDirs = @("demos", "demo", "examples", "example", "samples", "sample", "node_modules", ".git", ".github", "dist", "build", "test", "tests", "__pycache__", ".venv", "venv", "screenshots", "screenshot", "videos", "video", ".next", "coverage", ".idea", ".vscode", "gallery", "media")
     foreach ($it in $items) {
         if (-not $it.type) { continue }
         if ($it.type -eq "dir") {
-            Download-GithubSubdir $Owner $Name $Ref $it.path (Join-Path $DestDir $it.name)
+            if ($Lean -and ($denyDirs -contains ("$($it.name)".ToLower()))) { continue }
+            Download-GithubSubdir $Owner $Name $Ref $it.path (Join-Path $DestDir $it.name) $Lean
         }
         elseif ($it.type -eq "file" -and $it.download_url) {
+            if ($Lean -and $it.size -and ([int64]$it.size -gt 8388608)) { continue }
             $script:SubdirFiles++
             if ($script:SubdirFiles -gt 500) { throw "子目录文件过多(>500)，放弃 API 下载。" }
+            if ($Lean) { $script:SubdirBytes += [int64]($it.size); if ($script:SubdirBytes -gt 83886080) { throw "技能体积过大(>80MB)，放弃精简下载。" } }
             Invoke-WebRequest -Uri $it.download_url -OutFile (Join-Path $DestDir $it.name) -UseBasicParsing -TimeoutSec 60
         }
     }
@@ -621,13 +626,35 @@ function Install-SkillFromGithub {
             } catch { try { Remove-Item -LiteralPath $subDest -Recurse -Force -ErrorAction SilentlyContinue } catch {} }
         }
     }
-    # 回退：整仓 zip 下载（仓库本身即技能，或子目录 API 失败时）
+    # 快路径2：未指定子目录（仓库本身即技能）时，用 Contents API 精简下载（跳过 demos/示例/大文件），避免为体积巨大的仓库拉取整包
+    if (-not $srcRoot -and -not $cleanSkillPath) {
+        foreach ($r in ($refs | Select-Object -Unique)) {
+            $leanDest = Join-Path $tmpDir ("skilllean-" + (Get-Random))
+            try {
+                $script:SubdirFiles = 0; $script:SubdirBytes = 0
+                Download-GithubSubdir $owner $name $r "" $leanDest $true
+                $cand = $null
+                if ([System.IO.File]::Exists((Join-Path $leanDest "SKILL.md"))) { $cand = $leanDest }
+                else {
+                    $sf = @(Get-ChildItem -LiteralPath $leanDest -Recurse -File -Filter "SKILL.md" -ErrorAction SilentlyContinue)
+                    $m2 = $null
+                    if ($SkillSlug) { $m2 = $sf | Where-Object { $_.Directory.Name -ieq $SkillSlug } | Select-Object -First 1 }
+                    if (-not $m2 -and $SkillSlug) { foreach ($s in $sf) { try { $h = [System.IO.File]::ReadAllText($s.FullName, [Text.Encoding]::UTF8); if ($h -match "(?im)^\s*name\s*:\s*['`"]?$([regex]::Escape($SkillSlug))['`"]?\s*$") { $m2 = $s; break } } catch {} } }
+                    if (-not $m2) { $m2 = $sf | Select-Object -First 1 }
+                    if ($m2) { $cand = $m2.Directory.FullName }
+                }
+                if ($cand) { $srcRoot = $cand; $okRef = $r; break }
+                Remove-Item -LiteralPath $leanDest -Recurse -Force -ErrorAction SilentlyContinue
+            } catch { try { Remove-Item -LiteralPath $leanDest -Recurse -Force -ErrorAction SilentlyContinue } catch {} }
+        }
+    }
+    # 回退：整仓 zip 下载（仓库本身即技能，或子目录/精简 API 失败时）
     if (-not $srcRoot) {
         $zip = Join-Path $tmpDir ("skillzip-" + (Get-Random) + ".zip")
         foreach ($r in ($refs | Select-Object -Unique)) {
             $url = "https://codeload.github.com/$owner/$name/zip/refs/heads/$r"
             try {
-                Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 60
+                Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 600
                 if ([System.IO.File]::Exists($zip) -and ((Get-Item $zip).Length -gt 0)) { $okRef = $r; break }
             } catch {}
         }
