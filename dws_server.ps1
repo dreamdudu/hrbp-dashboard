@@ -1958,6 +1958,33 @@ while ($true) {
             continue
         }
 
+        # 安全读取技能目录下的某个文本文件（供提示词型技能把 SKILL.md 引用的支撑文件喂给大模型）
+        if ($requestPath -like "/skill-file*") {
+            try {
+                $dir = Resolve-SkillDir (Get-QueryValue $requestPath "id")
+                if (-not $dir) { throw "技能不存在。" }
+                $rel = [System.Uri]::UnescapeDataString((Get-QueryValue $requestPath "path"))
+                if ([string]::IsNullOrWhiteSpace($rel)) { throw "缺少 path。" }
+                $rel = $rel.Replace('\', '/').TrimStart('/')
+                if ($rel -match '(^|/)\.\.(/|$)') { throw "非法路径。" }
+                $ext = ([System.IO.Path]::GetExtension($rel)).ToLower()
+                if (@(".md", ".css", ".js", ".mjs", ".json", ".txt", ".html", ".htm", ".svg", ".csv") -notcontains $ext) { throw "不支持的文件类型。" }
+                $base = [System.IO.Path]::GetFullPath($dir)
+                $full = [System.IO.Path]::GetFullPath((Join-Path $base $rel))
+                if (-not $full.StartsWith($base, [System.StringComparison]::OrdinalIgnoreCase)) { throw "路径越界。" }
+                if (-not [System.IO.File]::Exists($full)) { throw "文件不存在。" }
+                $text = [System.IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
+                $max = 60000; $truncated = $false
+                if ($text.Length -gt $max) { $text = $text.Substring(0, $max); $truncated = $true }
+                $body = @{ ok = $true; path = $rel; text = $text; truncated = $truncated } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($body))
+            } catch {
+                $message = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
         if ($requestPath -eq "/skill-run" -and $method -eq "POST") {
             try {
                 $payload = $bodyText | ConvertFrom-Json
