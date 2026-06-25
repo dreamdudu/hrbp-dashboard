@@ -5613,8 +5613,8 @@ function skCloseModal(){var ov=document.getElementById("skModal");if(ov)ov.style
 var WF_ATTS=[],WF_RUNNING=false,WF_LAST_RUN=null,WF_ABORT=false,WF_ABORT_CTRL=null;
 // 把超时信号与“手动停止”信号合并；非工作流调用(WF_ABORT_CTRL 为空)时仅用超时
 function wfSignal(ms){try{var t=AbortSignal.timeout(ms);if(WF_ABORT_CTRL&&WF_ABORT_CTRL.signal&&typeof AbortSignal.any==="function")return AbortSignal.any([t,WF_ABORT_CTRL.signal]);return t;}catch(e){try{return AbortSignal.timeout(ms);}catch(e2){return undefined;}}}
-function wfBusyOn(){wfBusyOn();WF_ABORT=false;try{WF_ABORT_CTRL=(typeof AbortController!=="undefined")?new AbortController():null;}catch(e){WF_ABORT_CTRL=null;}var b=document.getElementById("wf-stop-btn");if(b){b.disabled=false;b.textContent="■ 停止";}}
-function wfBusyOff(){wfBusyOff();WF_ABORT_CTRL=null;var b=document.getElementById("wf-stop-btn");if(b){b.disabled=true;b.textContent="■ 停止";}}
+function wfBusyOn(){WF_RUNNING=true;WF_ABORT=false;try{WF_ABORT_CTRL=(typeof AbortController!=="undefined")?new AbortController():null;}catch(e){WF_ABORT_CTRL=null;}var b=document.getElementById("wf-stop-btn");if(b){b.disabled=false;b.textContent="■ 停止";}}
+function wfBusyOff(){WF_RUNNING=false;WF_ABORT_CTRL=null;var b=document.getElementById("wf-stop-btn");if(b){b.disabled=true;b.textContent="■ 停止";}}
 function wfStop(){if(!WF_RUNNING)return;WF_ABORT=true;try{if(WF_ABORT_CTRL)WF_ABORT_CTRL.abort();}catch(e){}var b=document.getElementById("wf-stop-btn");if(b){b.disabled=true;b.textContent="停止中…";}T("正在停止当前流程…","i");}
 function wfGet(){var a=LS("_workflows");return (a&&Array.isArray(a))?a:[];}
 function wfSave(list){LS("_workflows",list);}
