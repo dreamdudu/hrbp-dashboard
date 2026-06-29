@@ -1768,6 +1768,20 @@ while ($true) {
             continue
         }
 
+        if ($requestPath -like "/exposure-meta*") {
+            try {
+                $baseFile = Join-Path $dataDir "exposure-base.json"
+                $zhFile = Join-Path $dataDir "exposure-zh.json"
+                $fetchedAt = if (Test-Path $baseFile) { (Get-Item $baseFile).LastWriteTime.ToString("o") } else { "" }
+                $zhAt = if (Test-Path $zhFile) { (Get-Item $zhFile).LastWriteTime.ToString("o") } else { "" }
+                $resp = @{ ok = $true; fetchedAt = $fetchedAt; zhAt = $zhAt } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($resp))
+            } catch {
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"ok":false}'))
+            }
+            continue
+        }
+
         if ($requestPath -like "/skill-list*") {
             try {
                 $root = Get-SkillsDir
