@@ -2177,8 +2177,12 @@
                     <span>09
                     </span> AI提示词库
                 </button>
-                <button class="nav-item" data-m="settings">
+                <button class="nav-item" data-m="exposure">
                     <span>10
+                    </span> AI岗位暴露度统计
+                </button>
+                <button class="nav-item" data-m="settings">
+                    <span>11
                     </span> 设置
                 </button>
             </nav>
@@ -4447,6 +4451,100 @@ function plRenderFavs(){PL_VIEW="favs";plCrumb();var favs=plFavs();document.getE
 async function plSendToTask(){var d=PL_CUR_DETAIL;if(!d){T("请先打开一条提示词","w");return;}var L=PL_LANG;var title=L==="en"?(d.Title_EN||d.Title_CN):(d.Title_CN||d.Title_EN);var body=plHtmlToText(L==="en"?(d.PromptText_EN_HTML||d.PromptText_CN_HTML):(d.PromptText_CN_HTML||d.PromptText_EN_HTML));try{await openModal();}catch(e){}var tt=document.getElementById("tt");if(tt)tt.value=String(title||"").slice(0,200);var nt=document.getElementById("nt");if(nt)nt.value="【来自 AI 提示词库】"+(title||"")+"\n\n"+body;T("已带入「新建任务」，请补全优先级与截止日期后保存","s");}
 function plSendToWorkflow(){var d=PL_CUR_DETAIL;if(!d){T("请先打开一条提示词","w");return;}var L=PL_LANG;var body=plHtmlToText(L==="en"?(d.PromptText_EN_HTML||d.PromptText_CN_HTML):(d.PromptText_CN_HTML||d.PromptText_EN_HTML));switchTo("workflow");setTimeout(function(){var inEl=document.getElementById("wf-input");if(inEl){inEl.value=body;if(typeof wfPersistInput==="function")wfPersistInput();}T("已发送到「智能工作流」的输入框","s");},80);}
 </script>
+<div class="module" id="m-exposure">
+  <style>
+    .ex-wrap{max-width:1180px}
+    .ex-loading{text-align:center;padding:60px 20px;color:var(--slate-400);line-height:1.9}
+    .ex-src{font-size:12px;color:var(--slate-500);margin-bottom:16px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+    .ex-src a{color:var(--blue-500);font-weight:600}
+    .ex-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+    @media(max-width:880px){.ex-stats{grid-template-columns:repeat(2,1fr)}}
+    .ex-card{border:1px solid var(--slate-200);border-radius:14px;padding:16px 18px;background:#fff}
+    body.dark .ex-card,body.dark .ex-panel,body.dark .ex-tablewrap,body.dark .ex-sec,body.dark .ex-kv,body.dark .ex-toolbar input,body.dark .ex-toolbar select{background:var(--slate-100)}
+    .ex-card .lab{font-size:12px;color:var(--slate-400);margin-bottom:8px}
+    .ex-card .val{font-size:26px;font-weight:700;color:var(--slate-800);line-height:1.1}
+    .ex-card .sub{font-size:12px;color:var(--slate-400);margin-top:6px}
+    .ex-panels{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:18px}
+    @media(max-width:980px){.ex-panels{grid-template-columns:1fr}}
+    .ex-panel{border:1px solid var(--slate-200);border-radius:14px;padding:16px 18px;background:#fff}
+    .ex-panel h4{margin:0 0 12px;font-size:14px;color:var(--slate-700)}
+    .ex-scatter{width:100%;height:auto;display:block}
+    .ex-hint{font-size:12px;color:var(--slate-400);margin-top:8px;line-height:1.6}
+    .ex-bar{display:flex;height:18px;border-radius:9px;overflow:hidden;background:var(--slate-100)}
+    .ex-seg{height:100%}
+    .ex-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12px;color:var(--slate-600)}
+    .ex-leg{display:inline-flex;align-items:center;gap:5px}
+    .ex-leg i{width:10px;height:10px;border-radius:3px;display:inline-block}
+    .ex-leg em{color:var(--slate-400);font-style:normal}
+    .ex-rank{display:flex;flex-direction:column;gap:7px}
+    .ex-rankrow{display:flex;align-items:center;gap:10px;cursor:pointer;padding:3px 4px;border-radius:7px}
+    .ex-rankrow:hover{background:var(--slate-50)}
+    .ex-rt{flex:1;font-size:13px;color:var(--slate-700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ex-rbar{width:90px;height:7px;border-radius:4px;background:var(--slate-100);overflow:hidden;flex-shrink:0}
+    .ex-rbar i{display:block;height:100%}
+    .ex-rv{width:22px;text-align:right;font-size:12px;font-weight:700;color:var(--slate-600)}
+    .ex-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+    .ex-toolbar input,.ex-toolbar select{border:1px solid var(--slate-200);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--slate-50);color:var(--slate-700);outline:none}
+    .ex-toolbar input{flex:1;min-width:200px}
+    .ex-toolbar input:focus,.ex-toolbar select:focus{border-color:var(--blue-500)}
+    .ex-tablewrap{border:1px solid var(--slate-200);border-radius:12px;overflow:hidden;background:#fff}
+    .ex-table{width:100%;border-collapse:collapse;font-size:13px}
+    .ex-table th{background:var(--slate-50);color:var(--slate-500);font-weight:600;text-align:left;padding:11px 12px;cursor:pointer;white-space:nowrap;user-select:none}
+    .ex-table th.on{color:var(--blue-600)}
+    .ex-table td{padding:10px 12px;border-top:1px solid var(--slate-100);color:var(--slate-700);vertical-align:middle}
+    .ex-table tbody tr{cursor:pointer}
+    .ex-table tbody tr:hover{background:var(--slate-50)}
+    .ex-tt{font-weight:600;color:var(--slate-800)}
+    .ex-te{font-size:11px;color:var(--slate-400)}
+    .ex-pill{display:inline-block;min-width:24px;text-align:center;color:#fff;font-weight:700;border-radius:6px;padding:1px 6px;font-size:12px;margin-right:8px}
+    .ex-mini{display:inline-block;width:60px;height:6px;border-radius:3px;background:var(--slate-100);overflow:hidden;vertical-align:middle}
+    .ex-mini i{display:block;height:100%}
+    .ex-tablefoot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:12px}
+    .ex-info{font-size:12px;color:var(--slate-400)}
+    .ex-detail{max-width:860px}
+    .ex-dhead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+    .ex-dhead h3{margin:0 0 4px;font-size:22px;color:var(--slate-800)}
+    .ex-score{text-align:center;flex-shrink:0}
+    .ex-score .n{font-size:40px;font-weight:800;color:var(--c);line-height:1}
+    .ex-score .n small{font-size:16px;color:var(--slate-300);font-weight:600}
+    .ex-score .l{margin-top:6px;color:#fff;font-size:12px;font-weight:700;border-radius:20px;padding:3px 12px;display:inline-block}
+    .ex-kvs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+    .ex-kv{border:1px solid var(--slate-200);border-radius:12px;padding:12px 14px;background:#fff}
+    .ex-kv .k{font-size:12px;color:var(--slate-400);margin-bottom:6px}
+    .ex-kv .v{font-size:15px;font-weight:600;color:var(--slate-800)}
+    .ex-kv .v .ex-sub{font-size:12px;color:var(--slate-400);font-weight:400}
+    .ex-sec{border:1px solid var(--slate-200);border-radius:12px;padding:15px 18px;margin-bottom:14px;background:#fff}
+    .ex-sec h5{margin:0 0 9px;font-size:13px;color:var(--blue-600);font-weight:700}
+    .ex-sec p{margin:0;font-size:14px;line-height:1.85;color:var(--slate-700)}
+  </style>
+  <div class="ex-wrap"><div id="ex-view"></div></div>
+</div>
+<script>
+/* ====================== AI 岗位暴露度统计（数据源 exposure.hrflag.com，后端 /exposure-data 实时代理） ====================== */
+var EX_DATA=null,EX_VIEW="overview",EX_Q="",EX_CAT="",EX_RISK="",EX_SORT="exposure",EX_DIR=-1,EX_PAGE=1,EX_SIZE=30,EX_CUR=null,EX_RATE=7.2;
+function exRisk(e){if(e==null)return{k:"na",t:"未知",c:"var(--slate-400)"};if(e<=2)return{k:"vlow",t:"极低风险",c:"#10b981"};if(e<=4)return{k:"low",t:"低风险",c:"#22c55e"};if(e<=6)return{k:"mid",t:"中等风险",c:"#f59e0b"};if(e<=8)return{k:"high",t:"高风险",c:"#f97316"};return{k:"vhigh",t:"极高风险",c:"#ef4444"};}
+function exUsd(n){if(n==null)return "暂无";return "$"+Number(n).toLocaleString();}
+function exCny(n){if(n==null)return "暂无";return "¥"+Math.round(Number(n)*EX_RATE).toLocaleString();}
+function exNum(n){return Number(n||0).toLocaleString();}
+function exMedian(arr){var a=arr.filter(function(x){return x!=null;}).slice().sort(function(p,q){return p-q;});if(!a.length)return 0;var m=Math.floor(a.length/2);return a.length%2?a[m]:Math.round((a[m-1]+a[m])/2);}
+async function renderExposure(force){var host=document.getElementById("ex-view");if(!host)return;if(force)EX_DATA=null;if(!EX_DATA){host.innerHTML="<div class='ex-loading'>正在实时获取岗位 AI 暴露度数据…</div>";try{var d=await fetch("/exposure-data"+(force?"?refresh=1":""),{cache:"no-store"});var j=await d.json();if(!Array.isArray(j))throw new Error((j&&j.error)||"数据格式异常");EX_DATA=j;}catch(e){host.innerHTML="<div class='ex-loading'>数据获取失败。本功能新增了后端代理 <code>/exposure-data</code>，<b>需要重启看板服务</b>后才生效；并确保电脑可访问 exposure.hrflag.com。<br><span style='color:var(--slate-400);font-size:12px'>"+ESC(String(e.message||e))+"</span><br><button class='af-btn af-btn-sm' style='margin-top:12px' onclick='renderExposure(true)'>重试</button></div>";return;}}if(EX_VIEW==="detail"&&EX_CUR)exRenderDetail();else exRenderOverview();}
+function exScatter(data){var W=820,H=380,pl=58,pr=18,pt=18,pb=46;var pts=data.filter(function(d){return d.exposure!=null&&d.pay!=null;});var maxPay=Math.max.apply(null,pts.map(function(d){return d.pay;}))||1;var step=maxPay>160000?40000:20000;var top=Math.ceil(maxPay/step)*step;function X(e){return pl+(e-1)/9*(W-pl-pr);}function Y(p){return pt+(1-p/top)*(H-pt-pb);}var maxJobs=Math.max.apply(null,pts.map(function(d){return d.jobs||0;}))||1;function R(j){return Math.max(3,Math.min(16,Math.sqrt((j||0)/maxJobs)*15));}var g="";for(var yy=0;yy<=top;yy+=step){var y=Y(yy);g+="<line x1='"+pl+"' y1='"+y.toFixed(1)+"' x2='"+(W-pr)+"' y2='"+y.toFixed(1)+"' stroke='var(--slate-200)' stroke-width='1'/>";g+="<text x='"+(pl-7)+"' y='"+(y+4).toFixed(1)+"' text-anchor='end' font-size='10.5' fill='var(--slate-400)'>$"+(yy/1000)+"k</text>";}for(var xx=1;xx<=10;xx++){var x=X(xx);g+="<text x='"+x.toFixed(1)+"' y='"+(H-pb+19)+"' text-anchor='middle' font-size='10.5' fill='var(--slate-400)'>"+xx+"</text>";}g+="<text x='"+((pl+W-pr)/2).toFixed(0)+"' y='"+(H-5)+"' text-anchor='middle' font-size='12' fill='var(--slate-500)'>AI 暴露度（1 低 → 10 高）</text>";g+="<text transform='translate(13,"+((pt+H-pb)/2).toFixed(0)+") rotate(-90)' text-anchor='middle' font-size='12' fill='var(--slate-500)'>年薪中位数（美元）</text>";pts.forEach(function(d){var r=exRisk(d.exposure);g+="<circle cx='"+X(d.exposure).toFixed(1)+"' cy='"+Y(d.pay).toFixed(1)+"' r='"+R(d.jobs).toFixed(1)+"' fill='"+r.c+"' fill-opacity='0.5' stroke='"+r.c+"' stroke-width='1' style='cursor:pointer' onclick=\"exOpenBySlug('"+d.slug+"')\"><title>"+ESC((d.title_zh||d.title)+" · 暴露度"+d.exposure+" · $"+exNum(d.pay)+" · "+exNum(d.jobs)+"个岗位")+"</title></circle>";});return "<svg viewBox='0 0 "+W+" "+H+"' class='ex-scatter' preserveAspectRatio='xMidYMid meet'>"+g+"</svg>";}
+function exRiskDist(data){var bs=[{t:"极低",c:"#10b981"},{t:"低",c:"#22c55e"},{t:"中等",c:"#f59e0b"},{t:"高",c:"#f97316"},{t:"极高",c:"#ef4444"}];var counts=[0,0,0,0,0];data.forEach(function(d){if(d.exposure==null)return;var e=d.exposure;var idx=e<=2?0:e<=4?1:e<=6?2:e<=8?3:4;counts[idx]++;});var total=counts.reduce(function(a,b){return a+b;},0)||1;var bar=bs.map(function(b,i){var w=counts[i]/total*100;return w>0?("<div class='ex-seg' style='width:"+w+"%;background:"+b.c+"' title='"+b.t+"风险 "+counts[i]+"个'></div>"):"";}).join("");var legend=bs.map(function(b,i){return "<span class='ex-leg'><i style='background:"+b.c+"'></i>"+b.t+" "+counts[i]+" <em>"+Math.round(counts[i]/total*100)+"%</em></span>";}).join("");return "<div class='ex-bar'>"+bar+"</div><div class='ex-legend'>"+legend+"</div>";}
+function exTopList(d){var top=d.filter(function(x){return x.exposure!=null;}).slice().sort(function(a,b){return b.exposure-a.exposure;}).slice(0,8);return "<h4 style='margin-top:20px'>AI 暴露度最高 Top 8</h4><div class='ex-rank'>"+top.map(function(x){var r=exRisk(x.exposure);return "<div class='ex-rankrow' onclick=\"exOpenBySlug('"+x.slug+"')\"><span class='ex-rt'>"+ESC(x.title_zh||x.title)+"</span><span class='ex-rbar'><i style='width:"+(x.exposure*10)+"%;background:"+r.c+"'></i></span><span class='ex-rv'>"+x.exposure+"</span></div>";}).join("")+"</div>";}
+function exRenderOverview(){EX_VIEW="overview";var d=EX_DATA;var avgE=(d.reduce(function(a,x){return a+(x.exposure||0);},0)/d.length).toFixed(1);var medPay=exMedian(d.map(function(x){return x.pay;}));var highPct=Math.round(d.filter(function(x){return x.exposure>6;}).length/d.length*100);var cards="<div class='ex-stats'>"+[["职业总数",d.length+" <span style='font-size:14px;color:var(--slate-400)'>个</span>","覆盖美国劳工统计局职业"],["平均 AI 暴露度",avgE+" <span style='font-size:14px;color:var(--slate-400)'>/10</span>","数值越高越易被 AI 替代"],["薪资中位数",exUsd(medPay),"≈"+exCny(medPay)+" / 年"],["高风险及以上占比",highPct+" <span style='font-size:14px;color:var(--slate-400)'>%</span>","暴露度 > 6 的职业比例"]].map(function(c){return "<div class='ex-card'><div class='lab'>"+c[0]+"</div><div class='val'>"+c[1]+"</div><div class='sub'>"+c[2]+"</div></div>";}).join("")+"</div>";var src="<div class='ex-src'>数据来源：<a href='https://github.com/karpathy/jobs' target='_blank' rel='noopener'>github.com/karpathy/jobs</a> · 美国劳工统计局（BLS）· 经后端实时同步 <button class='af-btn af-btn-sm' style='margin-left:6px' onclick='renderExposure(true)'>↻ 刷新数据</button></div>";var charts="<div class='ex-panels'><div class='ex-panel'><h4>AI 暴露度 × 年薪分布</h4>"+exScatter(d)+"<div class='ex-hint'>每个气泡代表一个职业，气泡越大表示从业人数越多；越靠右 AI 暴露度越高、越易被替代。点击气泡查看详情。</div></div><div class='ex-panel'><h4>风险分级分布</h4>"+exRiskDist(d)+exTopList(d)+"</div></div>";document.getElementById("ex-view").innerHTML=src+cards+charts+exToolbar()+"<div id='ex-table'></div>";exRenderTable();}
+function exToolbar(){var cats=Array.from(new Set(EX_DATA.map(function(x){return x.category_zh||x.category;}))).filter(Boolean).sort();var catOpts="<option value=''>全部类别</option>"+cats.map(function(c){return "<option value=\""+ESC_ATTR(c)+"\""+(EX_CAT===c?" selected":"")+">"+ESC(c)+"</option>";}).join("");var risks=[["","全部风险"],["vlow","极低风险"],["low","低风险"],["mid","中等风险"],["high","高风险"],["vhigh","极高风险"]];var riskOpts=risks.map(function(r){return "<option value='"+r[0]+"'"+(EX_RISK===r[0]?" selected":"")+">"+r[1]+"</option>";}).join("");return "<div class='ex-toolbar'><input id='ex-q' placeholder='🔍 搜索职业（中文 / 英文）…' value=\""+ESC_ATTR(EX_Q)+"\" oninput='exSearch(this.value)'><select onchange='exSetCat(this.value)'>"+catOpts+"</select><select onchange='exSetRisk(this.value)'>"+riskOpts+"</select></div>";}
+function exFiltered(){var q=EX_Q.toLowerCase().trim();var arr=EX_DATA.filter(function(x){if(EX_CAT&&(x.category_zh||x.category)!==EX_CAT)return false;if(EX_RISK&&exRisk(x.exposure).k!==EX_RISK)return false;if(q){var hay=((x.title_zh||"")+" "+(x.title||"")+" "+(x.category_zh||"")).toLowerCase();if(hay.indexOf(q)<0)return false;}return true;});var key=EX_SORT;arr.sort(function(a,b){var va=a[key],vb=b[key];if(va==null)va=(typeof vb==="string"?"":-Infinity);if(vb==null)vb=(typeof va==="string"?"":-Infinity);if(typeof va==="string"||typeof vb==="string")return EX_DIR*String(va).localeCompare(String(vb),"zh");return EX_DIR*(va-vb);});return arr;}
+function exRenderTable(){var arr=exFiltered();var pages=Math.max(1,Math.ceil(arr.length/EX_SIZE));if(EX_PAGE>pages)EX_PAGE=pages;if(EX_PAGE<1)EX_PAGE=1;var start=(EX_PAGE-1)*EX_SIZE,rows=arr.slice(start,start+EX_SIZE);function th(key,label){var on=EX_SORT===key;return "<th onclick=\"exSort('"+key+"')\" class='"+(on?"on":"")+"'>"+label+(on?(EX_DIR<0?" ▾":" ▴"):"")+"</th>";}var head="<tr>"+th("title_zh","职业")+"<th>类别</th>"+th("exposure","AI暴露度")+th("pay","年薪(USD)")+th("jobs","岗位数")+"<th>就业前景</th></tr>";var body=rows.length?rows.map(function(x){var r=exRisk(x.exposure);return "<tr onclick=\"exOpenBySlug('"+x.slug+"')\"><td><div class='ex-tt'>"+ESC(x.title_zh||x.title)+"</div><div class='ex-te'>"+ESC(x.title||"")+"</div></td><td>"+ESC(x.category_zh||x.category||"")+"</td><td><span class='ex-pill' style='background:"+r.c+"'>"+(x.exposure==null?"—":x.exposure)+"</span><span class='ex-mini'><i style='width:"+((x.exposure||0)*10)+"%;background:"+r.c+"'></i></span></td><td>"+exUsd(x.pay)+"</td><td>"+exNum(x.jobs)+"</td><td>"+ESC(x.outlook_desc_zh||x.outlook_desc||"—")+"</td></tr>";}).join(""):"<tr><td colspan='6' style='text-align:center;padding:30px;color:var(--slate-400)'>没有匹配的职业</td></tr>";var info="共 "+arr.length+" 个职业"+((EX_Q||EX_CAT||EX_RISK)?"（已筛选）":"");document.getElementById("ex-table").innerHTML="<div class='ex-tablewrap'><table class='ex-table'><thead>"+head+"</thead><tbody>"+body+"</tbody></table></div><div class='ex-tablefoot'><span class='ex-info'>"+info+"</span>"+exPager(arr.length,EX_PAGE,EX_SIZE)+"</div>";}
+function exSearch(v){EX_Q=v;EX_PAGE=1;exRenderTable();}
+function exSetCat(v){EX_CAT=v;EX_PAGE=1;exRenderTable();}
+function exSetRisk(v){EX_RISK=v;EX_PAGE=1;exRenderTable();}
+function exSort(k){if(EX_SORT===k)EX_DIR=-EX_DIR;else{EX_SORT=k;EX_DIR=(k==="title_zh")?1:-1;}EX_PAGE=1;exRenderTable();}
+function exGoPage(p){EX_PAGE=p;exRenderTable();var v=document.getElementById("ex-table");if(v)v.scrollIntoView({block:"start",behavior:"smooth"});}
+function exPager(total,page,size){var pages=Math.ceil(total/size);if(pages<=1)return"";function b(p,l,dis,act){return "<button class='pg-btn"+(act?" active":"")+"'"+(dis?" disabled":" onclick='exGoPage("+p+")'")+">"+l+"</button>";}var h="<div class='pl-pager' style='display:flex;gap:6px;flex-wrap:wrap;align-items:center'>"+b(page-1,"‹",page<=1,false);var nums=[],i;for(i=1;i<=pages;i++){if(i===1||i===pages||(i>=page-1&&i<=page+1))nums.push(i);}var prev=0;nums.forEach(function(n){if(prev&&n-prev>1)h+="<span class='pg-ell'>…</span>";h+=b(n,String(n),false,n===page);prev=n;});h+=b(page+1,"›",page>=pages,false)+"</div>";return h;}
+function exOpenBySlug(slug){var x=EX_DATA.filter(function(d){return d.slug===slug;})[0];if(!x)return;EX_CUR=x;EX_VIEW="detail";exRenderDetail();var v=document.getElementById("m-exposure");if(v)v.scrollIntoView({block:"start",behavior:"smooth"});}
+function exRenderDetail(){var x=EX_CUR;if(!x){exRenderOverview();return;}var r=exRisk(x.exposure);var same=EX_DATA.filter(function(d){return d.category===x.category&&d.slug!==x.slug&&d.exposure!=null;}).sort(function(a,b){return b.exposure-a.exposure;}).slice(0,10);var sameHtml=same.map(function(d){var rr=exRisk(d.exposure);return "<div class='ex-rankrow' onclick=\"exOpenBySlug('"+d.slug+"')\"><span class='ex-rt'>"+ESC(d.title_zh||d.title)+"</span><span class='ex-rbar'><i style='width:"+(d.exposure*10)+"%;background:"+rr.c+"'></i></span><span class='ex-rv'>"+d.exposure+"</span></div>";}).join("");var grid=[["年薪中位数",exUsd(x.pay)+" <span class='ex-sub'>≈"+exCny(x.pay)+"</span>"],["从业人数",exNum(x.jobs)+" 人"],["就业前景",ESC(x.outlook_desc_zh||x.outlook_desc||"—")],["学历要求",ESC(x.education_zh||x.education||"—")],["职业类别",ESC(x.category_zh||x.category||"—")]].map(function(p){return "<div class='ex-kv'><div class='k'>"+p[0]+"</div><div class='v'>"+p[1]+"</div></div>";}).join("");var h="<div class='ex-detail'><div class='ex-toolbar' style='margin-bottom:14px'><button class='af-btn af-btn-sm' onclick='exBack()'>← 返回总览</button>"+(x.url?"<a class='af-btn af-btn-sm' href='"+ESC_ATTR(x.url)+"' target='_blank' rel='noopener'>BLS 原始资料 ↗</a>":"")+"</div><div class='ex-dhead'><div><h3>"+ESC(x.title_zh||x.title)+"</h3><div class='ex-te'>"+ESC(x.title||"")+"</div></div><div class='ex-score' style='--c:"+r.c+"'><div class='n'>"+(x.exposure==null?"—":x.exposure)+"<small>/10</small></div><div class='l' style='background:"+r.c+"'>"+r.t+"</div></div></div><div class='ex-kvs'>"+grid+"</div>";if(x.exposure_rationale)h+="<div class='ex-sec'><h5>AI 暴露度分析</h5><p>"+ESC(x.exposure_rationale)+"</p></div>";if(sameHtml)h+="<div class='ex-sec'><h5>同类别职业（按 AI 暴露度排序）</h5><div class='ex-rank'>"+sameHtml+"</div></div>";h+="</div>";document.getElementById("ex-view").innerHTML=h;}
+function exBack(){EX_VIEW="overview";exRenderOverview();}
+</script>
 <div class="module" id="m-settings">
                 <div id="settings-toolbar" style="max-width:500px;display:flex;gap:8px;align-items:center;margin-bottom:18px">
                     <button class="btn-go" id="btn-settings-edit" onclick="enterSettingsEdit()">编辑设置</button>
@@ -5427,7 +5525,7 @@ function renderCalendarCurrentView(){if(calViewMode==="month")renderCalMonthView
 function openCalendarOverview(mode){var today=TD();calSelDate=today;calViewDate=dateFromStr(today);renderCalGrid();switchTo("calendar");setCalView(mode);}
 function setCalView(mode){calViewMode=mode;document.getElementById("cal-btn-month").classList.toggle("active",mode==="month");document.getElementById("cal-btn-week").classList.toggle("active",mode==="week");document.getElementById("cal-btn-day").classList.toggle("active",mode==="day");document.getElementById("cal-month-view").classList.toggle("active",mode==="month");document.getElementById("cal-week-view").classList.toggle("active",mode==="week");document.getElementById("cal-day-view").classList.toggle("active",mode==="day");document.getElementById("cal-right-body").classList.toggle("month-mode",mode==="month");renderCalendarCurrentView();}
 function calSelectDate(ds){calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalendarCurrentView();}
-function switchTo(m){CM=m;document.querySelectorAll(".nav-item[data-m]").forEach(function(el){el.classList.toggle("active",el.dataset.m===m);});document.querySelectorAll(".module").forEach(function(el){el.classList.toggle("active",el.id==="m-"+m);});var titles={dashboard:"工作概览",tasks:"任务跟踪",calendar:"日程管理",alerts:"智能分析",affairs:"智能事务处理",analytics:"数据分析",skills:"应用管理",workflow:"智能工作流",prompts:"AI提示词库",settings:"设置"};document.getElementById("pg-title").textContent=titles[m];document.getElementById("sidebar-action").style.display=(m==="tasks"||m==="dashboard")?"flex":"none";if(m==="tasks")R();if(m==="settings")loadSettings();if(m==="alerts")renderAiSuggestions();if(m==="dashboard")renderDashboard();if(m==="affairs"&&typeof renderAffairs==="function")renderAffairs();if(m==="analytics"&&typeof renderAnalytics==="function")renderAnalytics();if(m==="skills"&&typeof renderSkills==="function")renderSkills();if(m==="workflow"&&typeof renderWorkflow==="function")renderWorkflow();if(m==="prompts"&&typeof renderPromptLib==="function")renderPromptLib();if(m==="calendar"){renderCalGrid();setCalView(calViewMode||"month");}}
+function switchTo(m){CM=m;document.querySelectorAll(".nav-item[data-m]").forEach(function(el){el.classList.toggle("active",el.dataset.m===m);});document.querySelectorAll(".module").forEach(function(el){el.classList.toggle("active",el.id==="m-"+m);});var titles={dashboard:"工作概览",tasks:"任务跟踪",calendar:"日程管理",alerts:"智能分析",affairs:"智能事务处理",analytics:"数据分析",skills:"应用管理",workflow:"智能工作流",prompts:"AI提示词库",exposure:"AI岗位暴露度统计",settings:"设置"};document.getElementById("pg-title").textContent=titles[m];document.getElementById("sidebar-action").style.display=(m==="tasks"||m==="dashboard")?"flex":"none";if(m==="tasks")R();if(m==="settings")loadSettings();if(m==="alerts")renderAiSuggestions();if(m==="dashboard")renderDashboard();if(m==="affairs"&&typeof renderAffairs==="function")renderAffairs();if(m==="analytics"&&typeof renderAnalytics==="function")renderAnalytics();if(m==="skills"&&typeof renderSkills==="function")renderSkills();if(m==="workflow"&&typeof renderWorkflow==="function")renderWorkflow();if(m==="prompts"&&typeof renderPromptLib==="function")renderPromptLib();if(m==="exposure"&&typeof renderExposure==="function")renderExposure();if(m==="calendar"){renderCalGrid();setCalView(calViewMode||"month");}}
 var MONTH_DRAWER_DATE="";
 function monthDateLabel(ds){var d=dateFromStr(ds),wk=["周日","周一","周二","周三","周四","周五","周六"];return (d.getMonth()+1)+"月"+d.getDate()+"日 "+wk[d.getDay()];}
 function openMonthDayDrawer(ds){MONTH_DRAWER_DATE=ds;calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalMonthView();}

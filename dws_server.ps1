@@ -1685,6 +1685,40 @@ while ($true) {
             continue
         }
 
+        if ($requestPath -like "/exposure-data*") {
+            try {
+                $cacheFile = Join-Path $dataDir "exposure-cache.json"
+                $ttlMin = 360
+                $forceRefresh = (Get-QueryValue $requestPath "refresh") -eq "1"
+                $useCache = $false
+                if ((Test-Path $cacheFile) -and -not $forceRefresh) {
+                    $ageMin = (New-TimeSpan -Start (Get-Item $cacheFile).LastWriteTime -End (Get-Date)).TotalMinutes
+                    if ($ageMin -lt $ttlMin) { $useCache = $true }
+                }
+                if (-not $useCache) {
+                    try {
+                        $resp = Invoke-WebRequest -Uri "https://exposure.hrflag.com/data.json" -UseBasicParsing -TimeoutSec 30 -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" -Headers @{ "Accept" = "application/json"; "Accept-Language" = "zh-CN,zh;q=0.9,en;q=0.8" }
+                        $content = [string]$resp.Content
+                        if ($content.TrimStart().StartsWith("[")) {
+                            [System.IO.File]::WriteAllText($cacheFile, $content, (New-Object Text.UTF8Encoding($false)))
+                        } elseif (-not (Test-Path $cacheFile)) {
+                            throw "上游返回内容异常"
+                        }
+                    } catch {
+                        if (-not (Test-Path $cacheFile)) { throw }
+                        Write-ServerLog "exposure-data fetch failed, serving stale cache: $($_.Exception.Message)"
+                    }
+                }
+                $bytes = [System.IO.File]::ReadAllBytes($cacheFile)
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" $bytes
+            } catch {
+                Write-ServerLog "exposure-data exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 502 "Bad Gateway" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
         if ($requestPath -like "/skill-list*") {
             try {
                 $root = Get-SkillsDir
