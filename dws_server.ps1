@@ -1686,9 +1686,10 @@ while ($true) {
         }
 
         if ($requestPath -like "/exposure-data*") {
+            # 数据源：karpathy/jobs（GitHub raw，永久可用）occupations.csv + scores.json，服务端合并为英文基础数据。不依赖 hrflag。
             try {
-                $cacheFile = Join-Path $dataDir "exposure-cache.json"
-                $ttlMin = 360
+                $cacheFile = Join-Path $dataDir "exposure-base.json"
+                $ttlMin = 1440
                 $forceRefresh = (Get-QueryValue $requestPath "refresh") -eq "1"
                 $useCache = $false
                 if ((Test-Path $cacheFile) -and -not $forceRefresh) {
@@ -1697,16 +1698,38 @@ while ($true) {
                 }
                 if (-not $useCache) {
                     try {
-                        $resp = Invoke-WebRequest -Uri "https://exposure.hrflag.com/data.json" -UseBasicParsing -TimeoutSec 30 -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" -Headers @{ "Accept" = "application/json"; "Accept-Language" = "zh-CN,zh;q=0.9,en;q=0.8" }
-                        $content = [string]$resp.Content
-                        if ($content.TrimStart().StartsWith("[")) {
-                            [System.IO.File]::WriteAllText($cacheFile, $content, (New-Object Text.UTF8Encoding($false)))
+                        $base = "https://raw.githubusercontent.com/karpathy/jobs/master"
+                        $csvResp = Invoke-WebRequest -Uri "$base/occupations.csv" -UseBasicParsing -TimeoutSec 30 -Headers @{ "User-Agent" = "HRBP-Dashboard" }
+                        $scoreResp = Invoke-WebRequest -Uri "$base/scores.json" -UseBasicParsing -TimeoutSec 30 -Headers @{ "User-Agent" = "HRBP-Dashboard" }
+                        $rows = [string]$csvResp.Content | ConvertFrom-Csv
+                        $scoreMap = @{}
+                        foreach ($s in ([string]$scoreResp.Content | ConvertFrom-Json)) { $scoreMap[[string]$s.slug] = $s }
+                        $toIntOrNull = { param($v) if ([string]::IsNullOrWhiteSpace([string]$v)) { $null } else { [int]([double]$v) } }
+                        $merged = foreach ($row in $rows) {
+                            $sc = $scoreMap[[string]$row.slug]
+                            [pscustomobject]@{
+                                title               = $row.title
+                                slug                = $row.slug
+                                category            = $row.category
+                                pay                 = (& $toIntOrNull $row.median_pay_annual)
+                                jobs                = (& $toIntOrNull $row.num_jobs_2024)
+                                outlook             = (& $toIntOrNull $row.outlook_pct)
+                                outlook_desc        = $row.outlook_desc
+                                education           = $row.entry_education
+                                exposure            = if ($sc) { $sc.exposure } else { $null }
+                                exposure_rationale  = if ($sc) { $sc.rationale } else { "" }
+                                url                 = $row.url
+                            }
+                        }
+                        $json = ConvertTo-Json @($merged) -Depth 5 -Compress
+                        if ($json.TrimStart().StartsWith("[")) {
+                            [System.IO.File]::WriteAllText($cacheFile, $json, (New-Object Text.UTF8Encoding($false)))
                         } elseif (-not (Test-Path $cacheFile)) {
-                            throw "上游返回内容异常"
+                            throw "合并后内容异常"
                         }
                     } catch {
                         if (-not (Test-Path $cacheFile)) { throw }
-                        Write-ServerLog "exposure-data fetch failed, serving stale cache: $($_.Exception.Message)"
+                        Write-ServerLog "exposure-data build failed, serving stale cache: $($_.Exception.Message)"
                     }
                 }
                 $bytes = [System.IO.File]::ReadAllBytes($cacheFile)
@@ -1715,6 +1738,32 @@ while ($true) {
                 Write-ServerLog "exposure-data exception: $($_.Exception.Message)"
                 $message = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 502 "Bad Gateway" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/exposure-zh*") {
+            # 中文翻译缓存：GET 读取已保存翻译；POST 由前端用大模型翻译后回存，落盘永久离线。
+            try {
+                $zhFile = Join-Path $dataDir "exposure-zh.json"
+                if ($method -eq "POST") {
+                    $ok = $false
+                    try { $null = $bodyText | ConvertFrom-Json; $ok = $true } catch {}
+                    if (-not $ok) { throw "无效的 JSON" }
+                    [System.IO.File]::WriteAllText($zhFile, [string]$bodyText, (New-Object Text.UTF8Encoding($false)))
+                    $resp = @{ ok = $true } | ConvertTo-Json -Compress
+                    Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($resp))
+                } else {
+                    if (Test-Path $zhFile) {
+                        Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([System.IO.File]::ReadAllBytes($zhFile))
+                    } else {
+                        Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes("{}"))
+                    }
+                }
+            } catch {
+                Write-ServerLog "exposure-zh exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
             continue
         }
