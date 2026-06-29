@@ -2173,8 +2173,12 @@
                     <span>08
                     </span> 应用管理
                 </button>
-                <button class="nav-item" data-m="settings">
+                <button class="nav-item" data-m="prompts">
                     <span>09
+                    </span> AI提示词库
+                </button>
+                <button class="nav-item" data-m="settings">
+                    <span>10
                     </span> 设置
                 </button>
             </nav>
@@ -4342,6 +4346,84 @@ color:#ffb3b8
     <div id="wf-progress"></div>
   </div>
 </div>
+<div class="module" id="m-prompts">
+  <style>
+    .pl-wrap{max-width:1180px}
+    .pl-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+    .pl-crumb{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--slate-500)}
+    .pl-crumb a{color:var(--blue-500);cursor:pointer;font-weight:600}
+    .pl-crumb .sep{color:var(--slate-300)}
+    .pl-stat{font-size:12px;color:var(--slate-400)}
+    .pl-search{display:flex;gap:8px;min-width:220px}
+    .pl-search input{flex:1;border:1px solid var(--slate-200);border-radius:10px;padding:9px 13px;font-size:13px;background:var(--slate-50);color:var(--slate-700);outline:none}
+    .pl-search input:focus{border-color:var(--blue-500)}
+    .pl-cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:14px}
+    .pl-cat{position:relative;border:1px solid var(--slate-200);border-radius:14px;padding:16px;background:#fff;cursor:pointer;transition:.18s;overflow:hidden}
+    body.dark .pl-cat,body.dark .pl-item,body.dark .pl-sec{background:var(--slate-100)}
+    .pl-cat:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(91,84,196,.14);border-color:var(--blue-500)}
+    .pl-cat .ic{width:44px;height:44px;border-radius:11px;object-fit:cover;background:var(--slate-100);margin-bottom:10px;display:block}
+    .pl-cat h4{margin:0 0 4px;font-size:15px;color:var(--slate-800);line-height:1.4}
+    .pl-cat .en{font-size:12px;color:var(--slate-400);margin-bottom:12px;min-height:16px}
+    .pl-cat .cnt{font-size:13px;color:var(--blue-600);font-weight:700}
+    .pl-cat .dl{position:absolute;top:14px;right:14px;font-size:11px;color:var(--slate-400)}
+    .pl-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(296px,1fr));gap:12px}
+    .pl-item{border:1px solid var(--slate-200);border-radius:12px;padding:14px;background:#fff;cursor:pointer;transition:.16s;display:flex;flex-direction:column;gap:7px;min-height:118px}
+    .pl-item:hover{border-color:var(--blue-500);box-shadow:0 6px 18px rgba(91,84,196,.12);transform:translateY(-1px)}
+    .pl-item .ti{font-size:14px;font-weight:600;color:var(--slate-800);line-height:1.45}
+    .pl-item .vp{font-size:12px;color:var(--slate-500);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .pl-item .meta{display:flex;gap:14px;font-size:11px;color:var(--slate-400);margin-top:auto}
+    .pl-badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;background:#fdecc8;color:#a8730a;font-weight:700;vertical-align:middle}
+    .pl-empty{text-align:center;padding:50px 20px;color:var(--slate-400);line-height:1.9}
+    .pl-detail{max-width:880px}
+    .pl-detail h3{margin:0 0 6px;font-size:21px;color:var(--slate-800);line-height:1.4}
+    .pl-detail .sub{font-size:12px;color:var(--slate-400);margin-bottom:16px}
+    .pl-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+    .pl-sec{border:1px solid var(--slate-200);border-radius:12px;padding:15px 18px;margin-bottom:13px;background:#fff}
+    .pl-sec h5{margin:0 0 9px;font-size:12px;color:var(--blue-600);letter-spacing:.6px;font-weight:700}
+    .pl-sec .bd{font-size:14px;color:var(--slate-700);line-height:1.85}
+    .pl-sec .bd p{margin:0 0 8px}.pl-sec .bd ol,.pl-sec .bd ul{margin:0;padding-left:20px}.pl-sec .bd li{margin:3px 0}
+    .pl-prompt .bd{white-space:pre-wrap;background:var(--slate-50);border-radius:9px;padding:15px;font-size:13.5px}
+    .pl-lang{margin-left:auto;display:inline-flex;border:1px solid var(--slate-200);border-radius:8px;overflow:hidden}
+    .pl-lang button{border:none;background:#fff;color:var(--slate-500);padding:6px 13px;font-size:12px;cursor:pointer}
+    body.dark .pl-lang button{background:var(--slate-100)}
+    .pl-lang button.on{background:var(--blue-500);color:#fff}
+    .pl-skel{height:118px;border-radius:12px;background:linear-gradient(90deg,var(--slate-100),var(--slate-50),var(--slate-100));background-size:200% 100%;animation:plsk 1.3s infinite}
+    @keyframes plsk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  </style>
+  <div class="pl-wrap">
+    <div class="pl-bar">
+      <div class="pl-crumb" id="pl-crumb"></div>
+      <span style="flex:1"></span>
+      <span class="pl-stat" id="pl-stat"></span>
+      <button class="af-btn af-btn-sm" onclick="renderPromptLib(true)">刷新</button>
+    </div>
+    <div id="pl-view"></div>
+  </div>
+</div>
+<script>
+/* ====================== AI 提示词库（本地全量离线，三层下钻） ====================== */
+var PL_CATS=null,PL_PROG=null,PL_VIEW="cats",PL_CAT=null,PL_ITEMS=[],PL_PAGE=1,PL_SIZE=24,PL_Q="",PL_LANG="cn",PL_DCACHE={},PL_CUR_DETAIL=null;
+async function plFetch(url){var r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}
+function plStrip(s){return String(s||"").replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/\s+/g," ").trim();}
+function plSanitize(html){var s=String(html||"");s=s.replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi,"");s=s.replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*\/?>/gi,"");s=s.replace(/\son\w+\s*=\s*"[^"]*"/gi,"").replace(/\son\w+\s*=\s*'[^']*'/gi,"").replace(/\son\w+\s*=\s*[^\s>]+/gi,"");s=s.replace(/(href|src)\s*=\s*("|')\s*javascript:[^"']*\2/gi,"$1=$2#$2");return s;}
+function plHtmlToText(html){var s=String(html||"");s=s.replace(/<\s*br\s*\/?>/gi,"\n").replace(/<\/(p|div|h[1-6]|tr)>/gi,"\n").replace(/<li[^>]*>/gi,"• ").replace(/<\/li>/gi,"\n").replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'");return s.replace(/\n{3,}/g,"\n\n").replace(/[ \t]+\n/g,"\n").trim();}
+async function renderPromptLib(force){var host=document.getElementById("pl-view");if(!host)return;if(force){PL_CATS=null;PL_PROG=null;PL_DCACHE={};}if(!PL_CATS){host.innerHTML="<div class='pl-cats'>"+Array(8).fill("<div class='pl-skel'></div>").join("")+"</div>";try{var c=await plFetch("/data/prompts/categories.json");PL_CATS=(c&&c.data)||[];}catch(e){document.getElementById("pl-crumb").innerHTML="<span>AI 提示词库</span>";host.innerHTML="<div class='pl-empty'>提示词库数据尚未就绪。<br>后台爬虫正在从 aicamp.hrflag.com 全量下载（约 4.8 万条，需数小时，可断点续传）。<br>稍后点右上角「刷新」即可看到已下载内容。<br><span style='font-size:12px;color:var(--slate-300)'>"+ESC(String(e.message||e))+"</span></div>";return;}try{PL_PROG=await plFetch("/data/prompts/progress.json");}catch(e){PL_PROG=null;}}if(PL_VIEW==="list"&&PL_CAT)plRenderList();else if(PL_VIEW==="detail"&&PL_CUR_DETAIL)plRenderDetail();else{PL_VIEW="cats";plRenderCats();}}
+function plProgFor(catId){if(!PL_PROG||!PL_PROG.categories)return null;return PL_PROG.categories.filter(function(x){return x.id===catId;})[0]||null;}
+function plCrumb(){var c=document.getElementById("pl-crumb");if(!c)return;var h="<a onclick=\"plGoCats()\">AI 提示词库</a>";if(PL_CAT){h+="<span class='sep'>/</span>";if(PL_VIEW==="detail")h+="<a onclick=\"plOpenCat("+PL_CAT.categoryId+")\">"+ESC(PL_CAT.name_cn||"")+"</a>";else h+="<span>"+ESC(PL_CAT.name_cn||"")+"</span>";}if(PL_VIEW==="detail")h+="<span class='sep'>/</span><span>详情</span>";c.innerHTML=h;}
+function plGoCats(){PL_VIEW="cats";PL_CAT=null;PL_Q="";plRenderCats();}
+function plRenderCats(){plCrumb();var st=document.getElementById("pl-stat");if(PL_PROG)st.textContent="已下载详情 "+(PL_PROG.totalDetails||0).toLocaleString()+" 条 · 已编目 "+(PL_PROG.totalListed||0).toLocaleString()+" 条";else st.textContent=PL_CATS.length+" 个部门分类";var h="<div class='pl-cats'>"+PL_CATS.map(function(cat){var p=plProgFor(cat.CategoryID);var claimed=cat.PromptCount||(p&&p.claimed)||"";var det=p?p.details:0;return "<div class='pl-cat' onclick=\"plOpenCat("+cat.CategoryID+")\">"+(cat.IconCode?"<img class='ic' src='"+ESC_ATTR(cat.IconCode)+"' loading='lazy' onerror=\"this.style.display='none'\">":"")+"<h4>"+ESC(cat.CategoryName_CN||"")+"</h4><div class='en'>"+ESC(cat.CategoryName_EN||"")+"</div><div class='cnt'>约 "+ESC(String(claimed))+" 条</div><div class='dl'>"+(det?("已存 "+det.toLocaleString()):"待下载")+"</div></div>";}).join("")+"</div>";document.getElementById("pl-view").innerHTML=h;}
+async function plOpenCat(catId){PL_VIEW="list";var host=document.getElementById("pl-view");host.innerHTML="<div class='pl-list'>"+Array(6).fill("<div class='pl-skel'></div>").join("")+"</div>";try{var l=await plFetch("/data/prompts/cat/"+catId+"/list.json");PL_CAT=l;PL_ITEMS=l.items||[];}catch(e){var meta=null;if(PL_CATS)meta=PL_CATS.filter(function(x){return x.CategoryID===catId;})[0];PL_CAT={categoryId:catId,name_cn:meta?meta.CategoryName_CN:("分类"+catId),items:[]};PL_ITEMS=[];}PL_PAGE=1;PL_Q="";plRenderList();}
+function plFilteredItems(){if(!PL_Q)return PL_ITEMS;var q=PL_Q.toLowerCase();return PL_ITEMS.filter(function(it){return ((it.Title_CN||"")+" "+(it.Title_EN||"")+" "+(it.ValueProposition_CN||"")).toLowerCase().indexOf(q)>=0;});}
+function plRenderList(){plCrumb();var search="<div class='pl-search' style='margin-bottom:14px'><input id='pl-q' placeholder='在「"+ESC_ATTR(PL_CAT.name_cn||"")+"」中搜索标题 / 价值主张…' value=\""+ESC_ATTR(PL_Q)+"\" oninput='plSearch(this.value)'></div>";document.getElementById("pl-view").innerHTML=search+"<div id='pl-listbody'></div>";plRenderListBody();}
+function plRenderListBody(){var items=plFilteredItems();var p=plProgFor(PL_CAT.categoryId);document.getElementById("pl-stat").textContent="共 "+PL_ITEMS.length.toLocaleString()+" 条"+(PL_Q?("，命中 "+items.length):"")+(p?(" · 已下详情 "+(p.details||0).toLocaleString()):"");var pages=Math.max(1,Math.ceil(items.length/PL_SIZE));if(PL_PAGE>pages)PL_PAGE=pages;if(PL_PAGE<1)PL_PAGE=1;var start=(PL_PAGE-1)*PL_SIZE,pageItems=items.slice(start,start+PL_SIZE);var grid=pageItems.length?("<div class='pl-list'>"+pageItems.map(function(it){return "<div class='pl-item' onclick=\"plOpenDetail("+it.PromptID+")\"><div class='ti'>"+ESC(it.Title_CN||it.Title_EN||"(无题)")+(it.IsPremium?" <span class='pl-badge'>Premium</span>":"")+"</div><div class='vp'>"+ESC(plStrip(it.ValueProposition_CN||it.ValueProposition_EN||""))+"</div><div class='meta'><span>👁 "+(it.ViewsNum||0)+"</span><span>📋 "+(it.CopyNum||0)+"</span></div></div>";}).join("")+"</div>"):"<div class='pl-empty'>"+(PL_ITEMS.length?"没有匹配的提示词":"该分类的列表尚未下载完成，稍后刷新再看")+"</div>";document.getElementById("pl-listbody").innerHTML=grid+plPager(items.length,PL_PAGE,PL_SIZE);}
+function plSearch(v){PL_Q=v;PL_PAGE=1;plRenderListBody();}
+function plGoPage(p){PL_PAGE=p;plRenderListBody();var v=document.getElementById("m-prompts");if(v)v.scrollIntoView({block:"start",behavior:"smooth"});}
+function plPager(total,page,size){var pages=Math.ceil(total/size);if(pages<=1)return"";function b(p,l,dis,act){return "<button class='pg-btn"+(act?" active":"")+"'"+(dis?" disabled":" onclick='plGoPage("+p+")'")+">"+l+"</button>";}var h="<div class='pl-pager' style='display:flex;justify-content:center;gap:6px;margin-top:18px;flex-wrap:wrap'>"+b(page-1,"‹",page<=1,false);var nums=[],i;for(i=1;i<=pages;i++){if(i===1||i===pages||(i>=page-2&&i<=page+2))nums.push(i);}var prev=0;nums.forEach(function(n){if(prev&&n-prev>1)h+="<span class='pg-ell'>…</span>";h+=b(n,String(n),false,n===page);prev=n;});h+=b(page+1,"›",page>=pages,false);h+="<span class='pg-info'>第 "+page+"/"+pages+" 页 · 共 "+total.toLocaleString()+" 项</span></div>";return h;}
+async function plOpenDetail(promptId){PL_VIEW="detail";var host=document.getElementById("pl-view");plCrumb();host.innerHTML="<div class='pl-detail'><div class='pl-skel' style='height:64px;margin-bottom:14px'></div><div class='pl-skel' style='height:200px'></div></div>";var info=PL_DCACHE[promptId];if(!info){try{info=await plFetch("/data/prompts/det/"+PL_CAT.categoryId+"/"+promptId+".json");PL_DCACHE[promptId]=info;}catch(e){host.innerHTML="<div class='pl-empty'>这条提示词的<b>详情正文尚未下载完成</b>（后台爬虫仍在逐条抓取），稍后再来即可。<br><button class='af-btn af-btn-sm' style='margin-top:14px' onclick='plOpenCat("+PL_CAT.categoryId+")'>← 返回列表</button></div>";return;}}PL_CUR_DETAIL=info;plRenderDetail();}
+function plRenderDetail(){plCrumb();var d=PL_CUR_DETAIL;if(!d){document.getElementById("pl-view").innerHTML="<div class='pl-empty'>无数据</div>";return;}var L=PL_LANG;function f(b){return L==="en"?(d[b+"_EN_HTML"]||d[b+"_CN_HTML"]||""):(d[b+"_CN_HTML"]||d[b+"_EN_HTML"]||"");}function sec(label,html,cls){if(!html||!plStrip(html))return"";return "<div class='pl-sec "+(cls||"")+"'><h5>"+label+"</h5><div class='bd'>"+plSanitize(html)+"</div></div>";}var title=L==="en"?(d.Title_EN||d.Title_CN):(d.Title_CN||d.Title_EN);var vp=L==="en"?(d.ValueProposition_EN||d.ValueProposition_CN):(d.ValueProposition_CN||d.ValueProposition_EN);var lang="<div class='pl-lang'><button class='"+(L==="cn"?"on":"")+"' onclick=\"plSetLang('cn')\">中文</button><button class='"+(L==="en"?"on":"")+"' onclick=\"plSetLang('en')\">EN</button></div>";var h="<div class='pl-detail'><div class='pl-toolbar'><button class='af-btn af-btn-sm' onclick='plOpenCat("+PL_CAT.categoryId+")'>← 返回</button><button class='af-btn af-btn-sm' onclick='plCopyPrompt()'>复制提示词</button>"+lang+"</div>";h+="<h3>"+ESC(title||"(无题)")+(d.IsPremium?" <span class='pl-badge'>Premium</span>":"")+"</h3>";h+="<div class='sub'>👁 "+(d.ViewsNum||0)+" 浏览 · 📋 "+(d.CopyNum||0)+" 复制"+(d.CreateDate?(" · "+String(d.CreateDate).slice(0,10)):"")+"</div>";if(vp&&plStrip(vp))h+="<div class='pl-sec'><h5>"+(L==="en"?"VALUE PROPOSITION":"价值主张")+"</h5><div class='bd'>"+ESC(plStrip(vp))+"</div></div>";var pt=f("PromptText");if(pt)h+="<div class='pl-sec pl-prompt'><h5>"+(L==="en"?"PROMPT":"提示词正文")+"</h5><div class='bd'>"+plSanitize(pt)+"</div></div>";h+=sec(L==="en"?"FUNCTIONALITY":"功能说明",f("FunctionalityDescription"));h+=sec(L==="en"?"HOW TO USE":"使用步骤",f("UsageInstructions"));h+=sec(L==="en"?"TIPS":"使用提示",f("TipsContent"));h+=sec(L==="en"?"MORE":"补充说明",f("AdditionalInfo"));h+="</div>";document.getElementById("pl-view").innerHTML=h;}
+function plSetLang(l){PL_LANG=l;plRenderDetail();}
+function plCopyPrompt(){var d=PL_CUR_DETAIL;if(!d)return;var L=PL_LANG;var html=L==="en"?(d.PromptText_EN_HTML||d.PromptText_CN_HTML):(d.PromptText_CN_HTML||d.PromptText_EN_HTML);var t=plHtmlToText(html);if(!t){T("无可复制的提示词正文","w");return;}if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){T("提示词已复制","s");},function(){T("复制失败","w");});else{try{var ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);T("提示词已复制","s");}catch(e){T("复制失败","w");}}}
+</script>
 <div class="module" id="m-settings">
                 <div id="settings-toolbar" style="max-width:500px;display:flex;gap:8px;align-items:center;margin-bottom:18px">
                     <button class="btn-go" id="btn-settings-edit" onclick="enterSettingsEdit()">编辑设置</button>
@@ -5322,7 +5404,7 @@ function renderCalendarCurrentView(){if(calViewMode==="month")renderCalMonthView
 function openCalendarOverview(mode){var today=TD();calSelDate=today;calViewDate=dateFromStr(today);renderCalGrid();switchTo("calendar");setCalView(mode);}
 function setCalView(mode){calViewMode=mode;document.getElementById("cal-btn-month").classList.toggle("active",mode==="month");document.getElementById("cal-btn-week").classList.toggle("active",mode==="week");document.getElementById("cal-btn-day").classList.toggle("active",mode==="day");document.getElementById("cal-month-view").classList.toggle("active",mode==="month");document.getElementById("cal-week-view").classList.toggle("active",mode==="week");document.getElementById("cal-day-view").classList.toggle("active",mode==="day");document.getElementById("cal-right-body").classList.toggle("month-mode",mode==="month");renderCalendarCurrentView();}
 function calSelectDate(ds){calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalendarCurrentView();}
-function switchTo(m){CM=m;document.querySelectorAll(".nav-item[data-m]").forEach(function(el){el.classList.toggle("active",el.dataset.m===m);});document.querySelectorAll(".module").forEach(function(el){el.classList.toggle("active",el.id==="m-"+m);});var titles={dashboard:"工作概览",tasks:"任务跟踪",calendar:"日程管理",alerts:"智能分析",affairs:"智能事务处理",analytics:"数据分析",skills:"应用管理",workflow:"智能工作流",settings:"设置"};document.getElementById("pg-title").textContent=titles[m];document.getElementById("sidebar-action").style.display=(m==="tasks"||m==="dashboard")?"flex":"none";if(m==="tasks")R();if(m==="settings")loadSettings();if(m==="alerts")renderAiSuggestions();if(m==="dashboard")renderDashboard();if(m==="affairs"&&typeof renderAffairs==="function")renderAffairs();if(m==="analytics"&&typeof renderAnalytics==="function")renderAnalytics();if(m==="skills"&&typeof renderSkills==="function")renderSkills();if(m==="workflow"&&typeof renderWorkflow==="function")renderWorkflow();if(m==="calendar"){renderCalGrid();setCalView(calViewMode||"month");}}
+function switchTo(m){CM=m;document.querySelectorAll(".nav-item[data-m]").forEach(function(el){el.classList.toggle("active",el.dataset.m===m);});document.querySelectorAll(".module").forEach(function(el){el.classList.toggle("active",el.id==="m-"+m);});var titles={dashboard:"工作概览",tasks:"任务跟踪",calendar:"日程管理",alerts:"智能分析",affairs:"智能事务处理",analytics:"数据分析",skills:"应用管理",workflow:"智能工作流",prompts:"AI提示词库",settings:"设置"};document.getElementById("pg-title").textContent=titles[m];document.getElementById("sidebar-action").style.display=(m==="tasks"||m==="dashboard")?"flex":"none";if(m==="tasks")R();if(m==="settings")loadSettings();if(m==="alerts")renderAiSuggestions();if(m==="dashboard")renderDashboard();if(m==="affairs"&&typeof renderAffairs==="function")renderAffairs();if(m==="analytics"&&typeof renderAnalytics==="function")renderAnalytics();if(m==="skills"&&typeof renderSkills==="function")renderSkills();if(m==="workflow"&&typeof renderWorkflow==="function")renderWorkflow();if(m==="prompts"&&typeof renderPromptLib==="function")renderPromptLib();if(m==="calendar"){renderCalGrid();setCalView(calViewMode||"month");}}
 var MONTH_DRAWER_DATE="";
 function monthDateLabel(ds){var d=dateFromStr(ds),wk=["周日","周一","周二","周三","周四","周五","周六"];return (d.getMonth()+1)+"月"+d.getDate()+"日 "+wk[d.getDay()];}
 function openMonthDayDrawer(ds){MONTH_DRAWER_DATE=ds;calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalMonthView();}

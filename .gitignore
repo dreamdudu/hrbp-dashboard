@@ -6,6 +6,7 @@ sync_response.json
 test_output.html
 test_response.html
 data/*.json
+data/prompts/
 data/backups/
 data/analytics/
 data/task-archive/
