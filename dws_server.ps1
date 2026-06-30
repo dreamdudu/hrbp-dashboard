@@ -1768,6 +1768,60 @@ while ($true) {
             continue
         }
 
+        if ($requestPath -like "/aiiq-data*") {
+            # 数据源：trackingai.org（Maxim Lott 的 Tracking AI，原始上游，永久可用）。不依赖 hrflag。
+            # f=logs -> 各模型 IQ 测试时间序列；f=models -> 模型元数据。服务端只做拉取+缓存，IQ 换算与聚合在前端。
+            try {
+                $f = Get-QueryValue $requestPath "f"
+                if ($f -eq "models") {
+                    $url = "https://trackingai.org/app/database/others/ai_models_info.csv"
+                    $cacheFile = Join-Path $dataDir "aiiq-models.csv"
+                } else {
+                    $url = "https://trackingai.org/app/database/proj_IQ/score_logs/iq/daily_logs.csv"
+                    $cacheFile = Join-Path $dataDir "aiiq-logs.csv"
+                }
+                $ttlMin = 720
+                $forceRefresh = (Get-QueryValue $requestPath "refresh") -eq "1"
+                $useCache = $false
+                if ((Test-Path $cacheFile) -and -not $forceRefresh) {
+                    $ageMin = (New-TimeSpan -Start (Get-Item $cacheFile).LastWriteTime -End (Get-Date)).TotalMinutes
+                    if ($ageMin -lt $ttlMin) { $useCache = $true }
+                }
+                if (-not $useCache) {
+                    try {
+                        $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 40 -Headers @{ "User-Agent" = "HRBP-Dashboard" }
+                        $content = [string]$resp.Content
+                        if ($content.Length -gt 50) {
+                            [System.IO.File]::WriteAllText($cacheFile, $content, (New-Object Text.UTF8Encoding($false)))
+                        } elseif (-not (Test-Path $cacheFile)) {
+                            throw "上游内容异常"
+                        }
+                    } catch {
+                        if (-not (Test-Path $cacheFile)) { throw }
+                        Write-ServerLog "aiiq-data fetch failed, serving stale cache: $($_.Exception.Message)"
+                    }
+                }
+                Send-HttpResponse $client 200 "OK" "text/csv; charset=utf-8" ([System.IO.File]::ReadAllBytes($cacheFile))
+            } catch {
+                Write-ServerLog "aiiq-data exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 502 "Bad Gateway" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/aiiq-meta*") {
+            try {
+                $logFile = Join-Path $dataDir "aiiq-logs.csv"
+                $fetchedAt = if (Test-Path $logFile) { (Get-Item $logFile).LastWriteTime.ToString("o") } else { "" }
+                $resp = @{ ok = $true; fetchedAt = $fetchedAt } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($resp))
+            } catch {
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"ok":false}'))
+            }
+            continue
+        }
+
         if ($requestPath -like "/exposure-meta*") {
             try {
                 $baseFile = Join-Path $dataDir "exposure-base.json"
