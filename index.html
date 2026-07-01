@@ -2181,12 +2181,16 @@
                     <span>10
                     </span> AI岗位暴露度统计
                 </button>
-                <button class="nav-item" data-m="aiiq" style="display:none">
+                <button class="nav-item" data-m="ainews">
                     <span>11
+                    </span> AI每日资讯
+                </button>
+                <button class="nav-item" data-m="aiiq" style="display:none">
+                    <span>12
                     </span> 大模型智商追踪
                 </button>
                 <button class="nav-item" data-m="settings">
-                    <span>11
+                    <span>12
                     </span> 设置
                 </button>
             </nav>
@@ -4455,6 +4459,116 @@ function plRenderFavs(){PL_VIEW="favs";plCrumb();var favs=plFavs();document.getE
 async function plSendToTask(){var d=PL_CUR_DETAIL;if(!d){T("请先打开一条提示词","w");return;}var L=PL_LANG;var title=L==="en"?(d.Title_EN||d.Title_CN):(d.Title_CN||d.Title_EN);var body=plHtmlToText(L==="en"?(d.PromptText_EN_HTML||d.PromptText_CN_HTML):(d.PromptText_CN_HTML||d.PromptText_EN_HTML));try{await openModal();}catch(e){}var tt=document.getElementById("tt");if(tt)tt.value=String(title||"").slice(0,200);var nt=document.getElementById("nt");if(nt)nt.value="【来自 AI 提示词库】"+(title||"")+"\n\n"+body;T("已带入「新建任务」，请补全优先级与截止日期后保存","s");}
 function plSendToWorkflow(){var d=PL_CUR_DETAIL;if(!d){T("请先打开一条提示词","w");return;}var L=PL_LANG;var body=plHtmlToText(L==="en"?(d.PromptText_EN_HTML||d.PromptText_CN_HTML):(d.PromptText_CN_HTML||d.PromptText_EN_HTML));switchTo("workflow");setTimeout(function(){var inEl=document.getElementById("wf-input");if(inEl){inEl.value=body;if(typeof wfPersistInput==="function")wfPersistInput();}T("已发送到「智能工作流」的输入框","s");},80);}
 </script>
+<div class="module" id="m-ainews">
+  <style>
+    .ain-wrap{display:flex;flex-direction:column;gap:14px}
+    .ain-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;border:1px solid var(--slate-200);background:var(--surface,#fff);border-radius:12px;padding:16px 18px}
+    .ain-title{display:flex;align-items:center;gap:12px;min-width:240px}
+    .ain-mark{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--navy-700),var(--blue-400));display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+    .ain-title h3{margin:0;font-size:20px;color:var(--slate-800);font-weight:800}
+    .ain-title .sub{font-size:12px;color:var(--slate-400);margin-top:3px}
+    .ain-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .ain-tabs{display:inline-flex;gap:4px;background:var(--slate-100);border:1px solid var(--slate-200);border-radius:8px;padding:3px}
+    .ain-tabs button{border:0;background:transparent;border-radius:6px;padding:6px 11px;font-size:12px;font-weight:700;color:var(--slate-500);cursor:pointer}
+    .ain-tabs button.active{background:var(--surface,#fff);color:var(--navy-700);box-shadow:0 1px 2px rgba(15,23,42,.08)}
+    .ain-src{border:1px solid var(--slate-200);background:var(--slate-50);border-radius:10px;padding:10px 12px;color:var(--slate-500);font-size:12px;line-height:1.7}
+    .ain-src a{color:var(--navy-700);text-decoration:none}.ain-src a:hover{text-decoration:underline}
+    .ain-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+    .ain-stat{border:1px solid var(--slate-200);background:var(--surface,#fff);border-radius:10px;padding:12px 14px}
+    .ain-stat .k{font-size:12px;color:var(--slate-400);margin-bottom:5px}.ain-stat .v{font-size:24px;font-weight:800;color:var(--navy-700);line-height:1}.ain-stat .s{font-size:12px;color:var(--slate-400);margin-top:6px}
+    .ain-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .ain-cat{border:1px solid var(--slate-200);background:var(--surface,#fff);border-radius:12px;padding:15px 16px;min-height:154px}
+    .ain-cat-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+    .ain-cat-ico{width:30px;height:30px;border-radius:8px;background:var(--c);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
+    .ain-cat h4{margin:0;font-size:16px;color:var(--slate-800);font-weight:800}.ain-cat .count{margin-left:auto;font-size:12px;color:var(--slate-400)}
+    .ain-list{display:flex;flex-direction:column;gap:8px}
+    .ain-row{display:grid;grid-template-columns:1fr auto;gap:10px;border-radius:8px;padding:8px 9px;cursor:pointer;border:1px solid transparent}
+    .ain-row:hover{background:var(--slate-50);border-color:var(--slate-200)}
+    .ain-row .t{font-size:13px;font-weight:700;color:var(--slate-800);line-height:1.45;overflow-wrap:anywhere}
+    .ain-row .m{font-size:11px;color:var(--slate-400);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}
+    .ain-row .act{display:flex;align-items:flex-start;gap:4px}
+    .ain-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 7px;font-size:11px;font-weight:700;background:var(--slate-100);color:var(--slate-500)}
+    .ain-chip.rumor{background:#fff7ed;color:#c2410c}.ain-chip.confirmed{background:#ecfdf5;color:#047857}.ain-chip.analysis{background:#eff6ff;color:#2563eb}
+    .ain-star{border:0;background:transparent;color:var(--slate-300);cursor:pointer;font-size:17px;line-height:1;padding:1px}.ain-star.on{color:#f59e0b}
+    .ain-empty{border:1px dashed var(--slate-200);border-radius:10px;padding:22px;text-align:center;color:var(--slate-400);font-size:13px;background:var(--slate-50)}
+    .ain-detail{border:1px solid var(--slate-200);background:var(--surface,#fff);border-radius:12px;padding:18px;max-width:940px}
+    .ain-detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;border-bottom:1px solid var(--slate-200);padding-bottom:14px;margin-bottom:14px}
+    .ain-detail h3{margin:0 0 8px;font-size:22px;color:var(--slate-800);line-height:1.35}
+    .ain-detail .meta{display:flex;gap:8px;flex-wrap:wrap;color:var(--slate-400);font-size:12px}
+    .ain-kps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0}
+    .ain-kp{border:1px solid var(--slate-200);background:var(--slate-50);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--slate-700);line-height:1.65}
+    .ain-sec{border-top:1px solid var(--slate-200);padding-top:12px;margin-top:12px}
+    .ain-sec h5{margin:0 0 8px;font-size:13px;color:var(--navy-700)}.ain-sec p{margin:0;color:var(--slate-700);line-height:1.85;font-size:14px;white-space:pre-wrap}
+    .ain-all{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+    .ain-item{border:1px solid var(--slate-200);background:var(--surface,#fff);border-radius:10px;padding:12px;cursor:pointer}
+    .ain-item:hover{border-color:var(--blue-300);box-shadow:0 8px 22px rgba(15,23,42,.06)}
+    .ain-item .t{font-size:14px;font-weight:800;color:var(--slate-800);line-height:1.45}.ain-item .s{font-size:12px;color:var(--slate-500);line-height:1.65;margin-top:7px}.ain-item .m{font-size:11px;color:var(--slate-400);margin-top:9px;display:flex;gap:7px;flex-wrap:wrap}
+    body.dark .ain-head,body.dark .ain-cat,body.dark .ain-stat,body.dark .ain-detail,body.dark .ain-item{background:var(--md-surface-container);border-color:rgba(121,216,232,.14)}
+    body.dark .ain-src,body.dark .ain-kp,body.dark .ain-empty{background:rgba(8,20,29,.84);border-color:rgba(121,216,232,.14)}
+    @media(max-width:900px){.ain-grid{grid-template-columns:1fr}.ain-detail-head{flex-direction:column}.ain-actions{width:100%}}
+  </style>
+  <div class="ain-wrap">
+    <div class="ain-head">
+      <div class="ain-title">
+        <div class="ain-mark"><svg class="icon icon-md" aria-hidden="true"><use href="#icon-ai"></use></svg></div>
+        <div>
+          <h3>AI每日资讯</h3>
+          <div class="sub" id="ain-sub">聚合官方博客、开发生态、论文与行业媒体</div>
+        </div>
+      </div>
+      <div class="ain-actions">
+        <div class="ain-tabs">
+          <button class="active" data-ain-tab="summary" onclick="aiNewsTab('summary')">今日汇总</button>
+          <button data-ain-tab="list" onclick="aiNewsTab('list')">全部资讯</button>
+          <button data-ain-tab="favorites" onclick="aiNewsTab('favorites')">收藏夹</button>
+        </div>
+        <button class="af-btn af-btn-sm" onclick="renderAiNews(true)"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-sync"></use></svg> 刷新</button>
+      </div>
+    </div>
+    <div id="ain-view"><div class="ain-empty">正在加载 AI 资讯...</div></div>
+  </div>
+</div>
+<script>
+/* ====================== AI每日资讯（真实源聚合：RSS/Atom + arXiv + GitHub；收藏落盘保存） ====================== */
+var AIN_DATA=null,AIN_FAVS=[],AIN_ZH=null,AIN_TAB="summary",AIN_CUR=null,AIN_TIMER=null,AIN_LOADING=false,AIN_TX_RUNNING=false;
+var AIN_CATS=[
+  {id:"要闻",short:"要",c:"#be4b45"},{id:"产品应用",short:"产",c:"#9f1239"},{id:"模型发布",short:"模",c:"#d97706"},{id:"开发生态",short:"开",c:"#0f766e"},
+  {id:"行业动态",short:"行",c:"#ca8a04"},{id:"技术与洞察",short:"技",c:"#2563eb"},{id:"前瞻与传闻",short:"闻",c:"#7c3aed"},{id:"其他",short:"其",c:"#64748b"}
+];
+function ainCatMeta(c){return AIN_CATS.filter(function(x){return x.id===c;})[0]||AIN_CATS[AIN_CATS.length-1];}
+function ainFmt(iso){if(!iso)return "未知";var d=new Date(iso);if(isNaN(d))return String(iso).slice(0,16);function p(n){return(n<10?"0":"")+n;}return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes());}
+function ainDay(iso){var d=iso?new Date(iso):new Date();if(isNaN(d))d=new Date();function p(n){return(n<10?"0":"")+n;}return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());}
+function ainConf(c){var m={confirmed:"已确认",rumor:"传闻",analysis:"洞察"};return m[c]||"已确认";}
+function ainIsFav(id){return AIN_FAVS.some(function(x){return x.id===id;});}
+function ainItems(){return (AIN_DATA&&Array.isArray(AIN_DATA.items))?AIN_DATA.items:[];}
+function ainById(id){return ainItems().concat(AIN_FAVS||[]).filter(function(x){return x.id===id;})[0];}
+function ainHasCjk(s){return /[一-鿿]/.test(String(s||""));}
+function ainTx(it,k){if(!it)return"";return it[k+"_zh"]||it[k]||"";}
+function ainTxPoints(it){return (it&&it.keyPoints_zh&&it.keyPoints_zh.length)?it.keyPoints_zh:(it&&it.keyPoints)||[];}
+async function ainLoadFavs(){try{var r=await fetch("/ai-news-favorites",{cache:"no-store"});var d=await r.json();AIN_FAVS=(d&&d.items)||[];}catch(e){AIN_FAVS=[];}}
+async function ainLoadZh(){try{var r=await fetch("/ai-news-zh",{cache:"no-store"});var d=await r.json();AIN_ZH=(d&&typeof d==="object")?d:{items:{}};if(!AIN_ZH.items)AIN_ZH.items={};}catch(e){AIN_ZH={items:{}};}}
+async function ainSaveZh(){if(!AIN_ZH)return;AIN_ZH.updatedAt=new Date().toISOString();try{await fetch("/ai-news-zh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(AIN_ZH)});}catch(e){}}
+function ainApplyZh(){if(!AIN_ZH||!AIN_ZH.items)return;function one(it){var z=it&&AIN_ZH.items[it.id];if(!it||!z)return;it.title_zh=z.title_zh||it.title_zh||"";it.summary_zh=z.summary_zh||it.summary_zh||"";it.detail_zh=z.detail_zh||it.detail_zh||"";it.keyPoints_zh=Array.isArray(z.keyPoints_zh)?z.keyPoints_zh:(it.keyPoints_zh||[]);}ainItems().forEach(one);(AIN_FAVS||[]).forEach(one);}
+function ainPendingZh(limit){var arr=ainItems().filter(function(it){var z=AIN_ZH&&AIN_ZH.items&&AIN_ZH.items[it.id];return it&&!ainHasCjk(it.title)&&!(z&&z.title_zh);});return limit?arr.slice(0,limit):arr;}
+async function ainTranslateBatch(list){if(!list||!list.length||!llmConfigured())return 0;if(!AIN_ZH)AIN_ZH={items:{}};if(!AIN_ZH.items)AIN_ZH.items={};var payload=list.map(function(it){return {id:it.id,title:it.title,summary:it.summary||"",detail:it.detail||"",keyPoints:it.keyPoints||[],sourceName:it.sourceName||"",category:it.category||""};});var sys="你是AI资讯中文编辑和翻译助手。请把英文AI新闻数据翻译成简体中文，要求标题像中文科技早报标题，摘要和详情通顺准确，保留 OpenAI、Claude、GitHub、API、Token、MCP 等专有名词。只返回严格JSON数组，每项格式为 {\"id\":\"原样保留\",\"title_zh\":\"中文标题\",\"summary_zh\":\"中文摘要\",\"detail_zh\":\"中文详情\",\"keyPoints_zh\":[\"中文要点1\",\"中文要点2\"]}。不要解释，不要代码块。";
+var out=await afCallLLM([{role:"system",content:sys},{role:"user",content:JSON.stringify(payload)}],8000,"translate");var arr=[];try{arr=exParseArr(out);}catch(e){arr=[];}var n=0;arr.forEach(function(o){if(o&&o.id&&(o.title_zh||o.summary_zh||o.detail_zh)){AIN_ZH.items[o.id]={title_zh:String(o.title_zh||""),summary_zh:String(o.summary_zh||""),detail_zh:String(o.detail_zh||""),keyPoints_zh:Array.isArray(o.keyPoints_zh)?o.keyPoints_zh.map(String).filter(Boolean):[]};n++;}});if(n){await ainSaveZh();ainApplyZh();}return n;}
+async function ainEnsureInitialChinese(){if(!llmConfigured())return;var first=ainPendingZh(12);if(!first.length)return;var host=document.getElementById("ain-view");if(host)host.innerHTML="<div class='ain-empty'>正在把最新 AI 资讯翻译成中文，稍候片刻...</div>";try{await ainTranslateBatch(first);}catch(e){}}
+async function ainAutoTranslateRest(){if(AIN_TX_RUNNING||!llmConfigured())return;var pend=ainPendingZh();if(!pend.length)return;AIN_TX_RUNNING=true;try{for(var i=0;i<pend.length;i+=8){await ainTranslateBatch(pend.slice(i,i+8));if(CM==="ainews"){ainRender();}}}catch(e){if(typeof T==="function")T("AI资讯中文化未完成："+String((e&&e.message)||e),"w");}finally{AIN_TX_RUNNING=false;}}
+function ainTabs(){document.querySelectorAll("#m-ainews [data-ain-tab]").forEach(function(b){b.classList.toggle("active",b.dataset.ainTab===AIN_TAB);});}
+function aiNewsTab(t){AIN_TAB=t;AIN_CUR=null;ainTabs();ainRender();}
+async function renderAiNews(force){var host=document.getElementById("ain-view");if(!host||AIN_LOADING)return;AIN_LOADING=true;ainTabs();if(!AIN_DATA||force)host.innerHTML="<div class='ain-empty'>正在刷新真实数据源，请稍候...</div>";try{if(typeof ensureStateLoaded==="function")await ensureStateLoaded();await ainLoadFavs();await ainLoadZh();var r=await fetch("/ai-news"+(force?"?refresh=1":""),{cache:"no-store"});var d=await r.json();if(!r.ok||!d.ok)throw new Error((d&&d.error)||("HTTP "+r.status));AIN_DATA=d;ainApplyZh();await ainEnsureInitialChinese();ainApplyZh();ainRender();ainAutoTranslateRest();if(force&&typeof T==="function")T("AI资讯已刷新并开始中文化","s");}catch(e){host.innerHTML="<div class='ain-empty'>AI资讯获取失败。请确认本地服务已重启，并且电脑可访问数据源。<br><span style='font-size:12px;color:var(--slate-300)'>"+ESC(String(e.message||e))+"</span><br><button class='af-btn af-btn-sm' style='margin-top:12px' onclick='renderAiNews(true)'>重试</button></div>";}finally{AIN_LOADING=false;}if(!AIN_TIMER){AIN_TIMER=setInterval(function(){if(CM==="ainews")renderAiNews(true);},30*60*1000);}}
+function ainRender(){if(AIN_CUR)return ainRenderDetail(AIN_CUR);if(AIN_TAB==="favorites")return ainRenderFavs();if(AIN_TAB==="list")return ainRenderList();return ainRenderSummary();}
+function ainSourceBar(){var items=ainItems(),src=(AIN_DATA&&AIN_DATA.sources)||[],date=(AIN_DATA&&AIN_DATA.date)||ainDay();var today=items.filter(function(x){return ainDay(x.publishedAt)===date;}).length;var rumor=items.filter(function(x){return x.confidence==="rumor";}).length;var fav=AIN_FAVS.length;var srcLinks=src.slice(0,8).map(function(s){return s.url?"<a href='"+ESC_ATTR(s.url)+"' target='_blank' rel='noopener'>"+ESC(s.name)+"</a>":ESC(s.name);}).join(" · ");var stats="<div class='ain-stats'><div class='ain-stat'><div class='k'>今日资讯</div><div class='v'>"+today+"</div><div class='s'>默认展示最近24小时</div></div><div class='ain-stat'><div class='k'>全部候选</div><div class='v'>"+items.length+"</div><div class='s'>不足时补充72小时内重要内容</div></div><div class='ain-stat'><div class='k'>传闻标记</div><div class='v'>"+rumor+"</div><div class='s'>只进入前瞻与传闻</div></div><div class='ain-stat'><div class='k'>已收藏</div><div class='v'>"+fav+"</div><div class='s'>独立永久保存</div></div></div>";var bar="<div class='ain-src'>数据获取于 <b>"+ainFmt(AIN_DATA&&AIN_DATA.fetchedAt)+"</b>"+((AIN_DATA&&AIN_DATA.stale)?" · 当前为缓存数据":"")+" · 数据源："+(srcLinks||"等待首次刷新")+"<br>官方来源和权威媒体优先；社区或未确认内容会自动进入「前瞻与传闻」。</div>";return stats+bar;}
+function ainRenderSummary(){var host=document.getElementById("ain-view");if(!host)return;var items=ainItems();var grouped={};AIN_CATS.forEach(function(c){grouped[c.id]=[];});items.forEach(function(it){(grouped[it.category]||grouped["其他"]).push(it);});var cards=AIN_CATS.map(function(c){var arr=(grouped[c.id]||[]).slice(0,6);var rows=arr.length?("<div class='ain-list'>"+arr.map(function(it){return ainRow(it);}).join("")+"</div>"):"<div class='ain-empty'>暂无该分类资讯</div>";return "<div class='ain-cat'><div class='ain-cat-head'><span class='ain-cat-ico' style='--c:"+c.c+"'>"+c.short+"</span><h4>"+c.id+"</h4><span class='count'>"+(grouped[c.id]||[]).length+" 条</span></div>"+rows+"</div>";}).join("");host.innerHTML=ainSourceBar()+"<div class='ain-grid'>"+cards+"</div>";}
+function ainRow(it){return "<div class='ain-row' onclick=\"ainOpen('"+ESC_ATTR(it.id)+"')\"><div><div class='t'>"+ESC(ainTx(it,"title"))+"</div><div class='m'><span>"+ESC(it.sourceName||"未知来源")+"</span><span>"+ainFmt(it.publishedAt)+"</span><span class='ain-chip "+ESC_ATTR(it.confidence||"confirmed")+"'>"+ainConf(it.confidence)+"</span></div></div><div class='act'><button class='ain-star "+(ainIsFav(it.id)?"on":"")+"' title='收藏/取消收藏' onclick=\"event.stopPropagation();ainToggleFav('"+ESC_ATTR(it.id)+"')\">"+(ainIsFav(it.id)?"★":"☆")+"</button></div></div>";}
+function ainRenderList(){var host=document.getElementById("ain-view");if(!host)return;var items=ainItems();var h=items.length?("<div class='ain-all'>"+items.map(function(it){return ainItem(it,true);}).join("")+"</div>"):"<div class='ain-empty'>暂无资讯，点击右上角刷新。</div>";host.innerHTML=ainSourceBar()+h;}
+function ainItem(it,withStar){var m=ainCatMeta(it.category);var act=withStar?"<button class='ain-star "+(ainIsFav(it.id)?"on":"")+"' title='收藏/取消收藏' onclick=\"event.stopPropagation();ainToggleFav('"+ESC_ATTR(it.id)+"')\">"+(ainIsFav(it.id)?"★":"☆")+"</button>":"<button class='af-link-btn danger' title='删除收藏' onclick=\"event.stopPropagation();ainToggleFav('"+ESC_ATTR(it.id)+"')\">删除</button>";return "<div class='ain-item' onclick=\"ainOpen('"+ESC_ATTR(it.id)+"')\"><div style='display:flex;gap:8px;align-items:flex-start'><span class='ain-cat-ico' style='--c:"+m.c+"'>"+m.short+"</span><div style='min-width:0;flex:1'><div class='t'>"+ESC(ainTx(it,"title"))+"</div><div class='s'>"+ESC(ainTx(it,"summary"))+"</div></div>"+act+"</div><div class='m'><span>"+ESC(it.category||"其他")+"</span><span>"+ESC(it.sourceName||"未知来源")+"</span><span>"+ainFmt(it.publishedAt)+"</span><span class='ain-chip "+ESC_ATTR(it.confidence||"confirmed")+"'>"+ainConf(it.confidence)+"</span></div></div>";}
+function ainRenderFavs(){var host=document.getElementById("ain-view");if(!host)return;var h=AIN_FAVS.length?("<div class='ain-src'>收藏内容会保存完整新闻信息，不受每日刷新影响。删除前会二次确认。</div><div class='ain-all'>"+AIN_FAVS.map(function(it){return ainItem(it,false);}).join("")+"</div>"):"<div class='ain-empty'>暂无收藏。打开任意资讯，点击「收藏」即可永久保存。</div>";host.innerHTML=h;}
+function ainOpen(id){var it=ainById(id);if(!it)return;AIN_CUR=it;ainRenderDetail(it);}
+function ainBack(){AIN_CUR=null;ainRender();}
+function ainRenderDetail(it){var host=document.getElementById("ain-view");if(!host)return;var kp=ainTxPoints(it).slice(0,6);var kps=kp.length?("<div class='ain-kps'>"+kp.map(function(p){return "<div class='ain-kp'>"+ESC(p)+"</div>";}).join("")+"</div>"):"";var src=it.sourceUrl?"<a class='af-btn af-btn-sm' href='"+ESC_ATTR(it.sourceUrl)+"' target='_blank' rel='noopener'>查看原文</a>":"";var fav=ainIsFav(it.id);var h="<div class='ain-detail'><div class='ain-detail-head'><div><button class='af-btn af-btn-sm' onclick='ainBack()' style='margin-bottom:12px'>返回</button><h3>"+ESC(ainTx(it,"title"))+"</h3><div class='meta'><span>"+ESC(it.category||"其他")+"</span><span>"+ESC(it.sourceName||"未知来源")+"</span><span>"+ainFmt(it.publishedAt)+"</span><span class='ain-chip "+ESC_ATTR(it.confidence||"confirmed")+"'>"+ainConf(it.confidence)+"</span></div></div><div style='display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end'><button class='af-btn af-btn-sm' onclick=\"ainToggleFav('"+ESC_ATTR(it.id)+"')\">"+(fav?"已收藏":"收藏")+"</button>"+src+"</div></div><div class='ain-sec' style='border-top:0;padding-top:0;margin-top:0'><h5>摘要</h5><p>"+ESC(ainTx(it,"summary"))+"</p></div>"+kps+"<div class='ain-sec'><h5>详情</h5><p>"+ESC(ainTx(it,"detail")||ainTx(it,"summary"))+"</p></div><div class='ain-sec'><h5>可信度说明</h5><p>"+(it.confidence==="rumor"?"该内容来自社区、传闻或非官方渠道，仅用于前瞻观察，不能视为已确认新闻。":it.confidence==="analysis"?"该内容偏技术解读或行业观察，建议结合原文判断。":"该内容来自官方来源、权威媒体或可追溯发布渠道。")+"</p></div></div>";host.innerHTML=h;}
+async function ainToggleFav(id){var it=ainById(id);if(!it)return;if(ainIsFav(id)){if(!confirm("确定删除这条收藏资讯？删除后不会影响今日资讯列表。"))return;try{await fetch("/ai-news-favorite-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:id})});await ainLoadFavs();if(AIN_CUR&&AIN_CUR.id===id&&AIN_TAB==="favorites")AIN_CUR=null;ainRender();T("已删除收藏","i");}catch(e){T("删除收藏失败："+String(e.message||e),"w");}return;}try{await fetch("/ai-news-favorite",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item:it})});await ainLoadFavs();ainRender();T("已加入收藏","s");}catch(e){T("收藏失败："+String(e.message||e),"w");}}
+</script>
 <div class="module" id="m-exposure">
   <style>
     .ex-wrap{max-width:none}
@@ -5653,7 +5767,7 @@ function renderCalendarCurrentView(){if(calViewMode==="month")renderCalMonthView
 function openCalendarOverview(mode){var today=TD();calSelDate=today;calViewDate=dateFromStr(today);renderCalGrid();switchTo("calendar");setCalView(mode);}
 function setCalView(mode){calViewMode=mode;document.getElementById("cal-btn-month").classList.toggle("active",mode==="month");document.getElementById("cal-btn-week").classList.toggle("active",mode==="week");document.getElementById("cal-btn-day").classList.toggle("active",mode==="day");document.getElementById("cal-month-view").classList.toggle("active",mode==="month");document.getElementById("cal-week-view").classList.toggle("active",mode==="week");document.getElementById("cal-day-view").classList.toggle("active",mode==="day");document.getElementById("cal-right-body").classList.toggle("month-mode",mode==="month");renderCalendarCurrentView();}
 function calSelectDate(ds){calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalendarCurrentView();}
-function switchTo(m){CM=m;document.querySelectorAll(".nav-item[data-m]").forEach(function(el){el.classList.toggle("active",el.dataset.m===m);});document.querySelectorAll(".module").forEach(function(el){el.classList.toggle("active",el.id==="m-"+m);});var titles={dashboard:"工作概览",tasks:"任务跟踪",calendar:"日程管理",alerts:"智能分析",affairs:"智能事务处理",analytics:"数据分析",skills:"应用管理",workflow:"智能工作流",prompts:"AI提示词库",exposure:"AI岗位暴露度统计",aiiq:"大模型智商追踪",settings:"设置"};document.getElementById("pg-title").textContent=titles[m];document.getElementById("sidebar-action").style.display=(m==="tasks"||m==="dashboard")?"flex":"none";if(m==="tasks")R();if(m==="settings")loadSettings();if(m==="alerts")renderAiSuggestions();if(m==="dashboard")renderDashboard();if(m==="affairs"&&typeof renderAffairs==="function")renderAffairs();if(m==="analytics"&&typeof renderAnalytics==="function")renderAnalytics();if(m==="skills"&&typeof renderSkills==="function")renderSkills();if(m==="workflow"&&typeof renderWorkflow==="function")renderWorkflow();if(m==="prompts"&&typeof renderPromptLib==="function")renderPromptLib();if(m==="exposure"&&typeof renderExposure==="function")renderExposure();if(m==="aiiq"&&typeof renderAiiq==="function")renderAiiq();if(m==="calendar"){renderCalGrid();setCalView(calViewMode||"month");}}
+function switchTo(m){CM=m;document.querySelectorAll(".nav-item[data-m]").forEach(function(el){el.classList.toggle("active",el.dataset.m===m);});document.querySelectorAll(".module").forEach(function(el){el.classList.toggle("active",el.id==="m-"+m);});var titles={dashboard:"工作概览",tasks:"任务跟踪",calendar:"日程管理",alerts:"智能分析",affairs:"智能事务处理",analytics:"数据分析",skills:"应用管理",workflow:"智能工作流",prompts:"AI提示词库",exposure:"AI岗位暴露度统计",ainews:"AI每日资讯",aiiq:"大模型智商追踪",settings:"设置"};document.getElementById("pg-title").textContent=titles[m];document.getElementById("sidebar-action").style.display=(m==="tasks"||m==="dashboard")?"flex":"none";if(m==="tasks")R();if(m==="settings")loadSettings();if(m==="alerts")renderAiSuggestions();if(m==="dashboard")renderDashboard();if(m==="affairs"&&typeof renderAffairs==="function")renderAffairs();if(m==="analytics"&&typeof renderAnalytics==="function")renderAnalytics();if(m==="skills"&&typeof renderSkills==="function")renderSkills();if(m==="workflow"&&typeof renderWorkflow==="function")renderWorkflow();if(m==="prompts"&&typeof renderPromptLib==="function")renderPromptLib();if(m==="exposure"&&typeof renderExposure==="function")renderExposure();if(m==="ainews"&&typeof renderAiNews==="function")renderAiNews();if(m==="aiiq"&&typeof renderAiiq==="function")renderAiiq();if(m==="calendar"){renderCalGrid();setCalView(calViewMode||"month");}}
 var MONTH_DRAWER_DATE="";
 function monthDateLabel(ds){var d=dateFromStr(ds),wk=["周日","周一","周二","周三","周四","周五","周六"];return (d.getMonth()+1)+"月"+d.getDate()+"日 "+wk[d.getDay()];}
 function openMonthDayDrawer(ds){MONTH_DRAWER_DATE=ds;calSelDate=ds;calViewDate=dateFromStr(ds);var input=document.getElementById("cal-date");if(input)input.value=ds;renderCalGrid();renderCalMonthView();}

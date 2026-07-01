@@ -65,6 +65,356 @@ function Get-WebResponseUtf8Content {
     return [string]$Response.Content
 }
 
+function Get-AiNewsSources {
+    return @(
+        @{ id = "openai"; name = "OpenAI News"; type = "official"; url = "https://openai.com/news/"; feedUrl = "https://openai.com/news/rss.xml"; categoryHints = @("要闻", "模型发布", "产品应用", "开发生态"); confidence = "confirmed" },
+        @{ id = "google-ai"; name = "Google AI Blog"; type = "official"; url = "https://blog.google/technology/ai/"; feedUrl = "https://blog.google/technology/ai/rss/"; categoryHints = @("要闻", "产品应用", "模型发布"); confidence = "confirmed" },
+        @{ id = "huggingface"; name = "Hugging Face Blog"; type = "ecosystem"; url = "https://huggingface.co/blog"; feedUrl = "https://huggingface.co/blog/feed.xml"; categoryHints = @("模型发布", "开发生态", "技术与洞察"); confidence = "confirmed" },
+        @{ id = "arxiv-ai"; name = "arXiv AI/ML/CL"; type = "research"; url = "https://arxiv.org/"; feedUrl = "https://export.arxiv.org/api/query?search_query=(cat:cs.AI+OR+cat:cs.CL+OR+cat:cs.LG)&start=0&max_results=30&sortBy=submittedDate&sortOrder=descending"; categoryHints = @("技术与洞察"); confidence = "analysis" },
+        @{ id = "github-mcp"; name = "GitHub MCP Releases"; type = "developer_ecosystem"; url = "https://github.com/modelcontextprotocol/servers/releases"; feedUrl = "https://github.com/modelcontextprotocol/servers/releases.atom"; categoryHints = @("开发生态"); confidence = "confirmed" },
+        @{ id = "github-openai-python"; name = "OpenAI Python SDK Releases"; type = "developer_ecosystem"; url = "https://github.com/openai/openai-python/releases"; feedUrl = "https://github.com/openai/openai-python/releases.atom"; categoryHints = @("开发生态"); confidence = "confirmed" },
+        @{ id = "techcrunch-ai"; name = "TechCrunch AI"; type = "media"; url = "https://techcrunch.com/category/artificial-intelligence/"; feedUrl = "https://techcrunch.com/category/artificial-intelligence/feed/"; categoryHints = @("行业动态", "产品应用", "要闻"); confidence = "confirmed" },
+        @{ id = "the-decoder"; name = "The Decoder"; type = "media"; url = "https://the-decoder.com/"; feedUrl = "https://the-decoder.com/feed/"; categoryHints = @("行业动态", "模型发布", "产品应用"); confidence = "confirmed" },
+        @{ id = "mittr-ai"; name = "MIT Technology Review AI"; type = "media"; url = "https://www.technologyreview.com/topic/artificial-intelligence/"; feedUrl = "https://www.technologyreview.com/topic/artificial-intelligence/feed/"; categoryHints = @("技术与洞察", "行业动态"); confidence = "analysis" },
+        @{ id = "marktechpost-ai"; name = "MarkTechPost AI"; type = "media"; url = "https://www.marktechpost.com/category/technology/artificial-intelligence/"; feedUrl = "https://www.marktechpost.com/category/technology/artificial-intelligence/feed/"; categoryHints = @("技术与洞察", "模型发布"); confidence = "analysis" },
+        @{ id = "hackernews-ai"; name = "Hacker News AI"; type = "community"; url = "https://hnrss.org/newest?q=AI"; feedUrl = "https://hnrss.org/newest?q=AI"; categoryHints = @("前瞻与传闻"); confidence = "rumor" }
+    )
+}
+
+function ConvertTo-AiNewsId {
+    param([string]$Text)
+    $sha = [System.Security.Cryptography.SHA1]::Create()
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+    return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant().Substring(0, 16)
+}
+
+function ConvertFrom-AiNewsHtml {
+    param([string]$Text, [int]$Max = 500)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return "" }
+    $s = [System.Net.WebUtility]::HtmlDecode($Text)
+    $s = [regex]::Replace($s, '(?is)<script[^>]*>.*?</script>', ' ')
+    $s = [regex]::Replace($s, '(?is)<style[^>]*>.*?</style>', ' ')
+    $s = [regex]::Replace($s, '(?is)<[^>]+>', ' ')
+    $s = [regex]::Replace($s, '\s+', ' ').Trim()
+    if ($s.Length -gt $Max) { $s = $s.Substring(0, $Max).Trim() + "..." }
+    return $s
+}
+
+function Get-AiNewsChildText {
+    param($Node, [string[]]$Names)
+    foreach ($name in $Names) {
+        $n = $Node.SelectSingleNode("*[local-name()='$name']")
+        if ($n -and -not [string]::IsNullOrWhiteSpace($n.InnerText)) {
+            return ([System.Net.WebUtility]::HtmlDecode([string]$n.InnerText)).Trim()
+        }
+    }
+    return ""
+}
+
+function Get-AiNewsLink {
+    param($Node)
+    $n = $Node.SelectSingleNode("*[local-name()='link']")
+    if (-not $n) { return "" }
+    if ($n.Attributes -and $n.Attributes["href"]) { return [string]$n.Attributes["href"].Value }
+    return ([string]$n.InnerText).Trim()
+}
+
+function ConvertTo-AiNewsCategory {
+    param([string]$Title, [string]$Summary, $Source)
+    $hay = (($Title + " " + $Summary).ToLowerInvariant())
+    if ([string]$Source.type -eq "community") { return "前瞻与传闻" }
+    if ($hay -match 'rumor|leak|reportedly|preview|beta|prototype|测试版|内测|泄露|爆料|传闻|据称') { return "前瞻与传闻" }
+    if ($hay -match 'model|gpt|claude|gemini|llama|qwen|deepseek|mistral|benchmark|token|api pricing|模型|开源|参数|推理|上下文|基准|定价') { return "模型发布" }
+    if ($hay -match 'sdk|api|github|release|mcp|agent|agents|developer|framework|langchain|llamaindex|cursor|copilot|开发|插件|工具链|仓库|版本') { return "开发生态" }
+    if ($hay -match 'app|product|feature|notebook|workspace|search|browser|assistant|产品|应用|功能|客户端|桌面版|上线') { return "产品应用" }
+    if ($hay -match 'paper|arxiv|research|study|benchmark|safety|alignment|architecture|论文|研究|洞察|技术|安全|评测') { return "技术与洞察" }
+    if ($hay -match 'funding|acquire|startup|regulation|policy|lawsuit|market|valuation|融资|收购|监管|政策|估值|行业|公司') { return "行业动态" }
+    if ($hay -match 'openai|anthropic|google|microsoft|meta|nvidia|xai|重大|发布|宣布') { return "要闻" }
+    if ($Source.categoryHints -and $Source.categoryHints.Count -gt 0) { return [string]$Source.categoryHints[0] }
+    return "其他"
+}
+
+function Test-AiNewsRelevant {
+    param([string]$Title, [string]$Summary, $Source)
+    if ([string]$Source.type -in @("official", "ecosystem", "research", "developer_ecosystem")) { return $true }
+    $hay = (($Title + " " + $Summary).ToLowerInvariant())
+    return ($hay -match 'ai|artificial intelligence|openai|anthropic|claude|gpt|llm|large language|gemini|deepmind|hugging face|agent|agents|copilot|mcp|rag|model|模型|人工智能|大模型|生成式|智能体|机器人|深度学习|机器学习')
+}
+
+function Get-AiNewsItemsFromSource {
+    param($Source)
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    $resp = Invoke-WebRequest -Uri ([string]$Source.feedUrl) -UseBasicParsing -TimeoutSec 25 -Headers @{ "User-Agent" = "HRBP-Dashboard"; "Accept" = "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" }
+    $content = Get-WebResponseUtf8Content $resp
+    [xml]$xml = $content
+    $nodes = $xml.SelectNodes("//*[local-name()='item' or local-name()='entry']")
+    $items = @()
+    foreach ($node in $nodes) {
+        $title = Get-AiNewsChildText $node @("title")
+        if ([string]::IsNullOrWhiteSpace($title)) { continue }
+        $link = Get-AiNewsLink $node
+        $rawSummary = Get-AiNewsChildText $node @("summary", "description", "encoded", "content")
+        $summary = ConvertFrom-AiNewsHtml $rawSummary 260
+        if (-not (Test-AiNewsRelevant $title $summary $Source)) { continue }
+        $pub = Get-AiNewsChildText $node @("published", "updated", "pubDate", "dc:date")
+        $dt = Get-Date
+        if ($pub) { try { $dt = [DateTime]::Parse($pub, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal) } catch { $dt = Get-Date } }
+        $category = ConvertTo-AiNewsCategory $title $summary $Source
+        $confidence = [string]$Source.confidence
+        if ($category -eq "前瞻与传闻") { $confidence = "rumor" }
+        $id = ConvertTo-AiNewsId (([string]$Source.id) + "|" + ($link.Trim()) + "|" + $title.Trim())
+        $detail = if ($summary) { $summary } else { $title }
+        $keyPoints = @()
+        $keyPoints += $summary
+        $keyPoints += ("来源：" + [string]$Source.name)
+        $keyPoints += ("分类：" + $category)
+        $items += [pscustomobject]@{
+            id = $id
+            title = $title.Trim()
+            category = $category
+            summary = $summary
+            keyPoints = @($keyPoints | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 4)
+            detail = $detail
+            sourceName = [string]$Source.name
+            sourceUrl = $link
+            sourceType = [string]$Source.type
+            publishedAt = $dt.ToUniversalTime().ToString("o")
+            fetchedAt = (Get-Date).ToUniversalTime().ToString("o")
+            tags = @()
+            confidence = $confidence
+            isFavorite = $false
+        }
+    }
+    return @($items)
+}
+
+function Get-AiNewsPayload {
+    param([bool]$ForceRefresh = $false)
+    Ensure-DataStore
+    $cacheFile = Join-Path $dataDir "ai-news-cache.json"
+    $ttlMin = 120
+    $useCache = $false
+    if ((Test-Path $cacheFile) -and -not $ForceRefresh) {
+        $ageMin = (New-TimeSpan -Start (Get-Item $cacheFile).LastWriteTime -End (Get-Date)).TotalMinutes
+        if ($ageMin -lt $ttlMin) { $useCache = $true }
+    }
+    if ($useCache) { return Apply-AiNewsChinese ([System.IO.File]::ReadAllText($cacheFile, [Text.Encoding]::UTF8)) }
+    $sources = Get-AiNewsSources
+    $all = @()
+    $errors = @()
+    foreach ($src in $sources) {
+        try {
+            $all += @(Get-AiNewsItemsFromSource $src)
+        } catch {
+            $errors += ([string]$src.name + ": " + $_.Exception.Message)
+            Write-ServerLog ("ai-news source failed " + [string]$src.id + ": " + $_.Exception.Message)
+        }
+    }
+    $dedup = @{}
+    foreach ($it in $all) {
+        $key = ([regex]::Replace(([string]$it.title).ToLowerInvariant(), '[^\p{L}\p{Nd}]+', ' ')).Trim()
+        if (-not $key) { $key = [string]$it.id }
+        if (-not $dedup.ContainsKey($key)) { $dedup[$key] = $it; continue }
+        $old = $dedup[$key]
+        $oldRank = if ($old.sourceType -eq "official") { 3 } elseif ($old.sourceType -eq "media") { 2 } else { 1 }
+        $newRank = if ($it.sourceType -eq "official") { 3 } elseif ($it.sourceType -eq "media") { 2 } else { 1 }
+        if ($newRank -gt $oldRank -or ([string]$it.summary).Length -gt ([string]$old.summary).Length) { $dedup[$key] = $it }
+    }
+    $items = @($dedup.Values | Sort-Object { try { [DateTime]::Parse($_.publishedAt) } catch { [DateTime]::MinValue } } -Descending | Select-Object -First 80)
+    if ($items.Count -eq 0 -and (Test-Path $cacheFile)) {
+        $cached = [System.IO.File]::ReadAllText($cacheFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $cached.stale = $true
+        $cached.error = ($errors -join "; ")
+        return Apply-AiNewsChinese ($cached | ConvertTo-Json -Depth 12)
+    }
+    $cats = @("要闻", "产品应用", "模型发布", "开发生态", "行业动态", "技术与洞察", "前瞻与传闻", "其他")
+    $payload = [pscustomobject]@{
+        ok = $true
+        date = (Get-Date).ToString("yyyy-MM-dd")
+        fetchedAt = (Get-Date).ToUniversalTime().ToString("o")
+        stale = $false
+        categories = $cats
+        sources = @($sources | ForEach-Object { [pscustomobject]@{ id = $_.id; name = $_.name; type = $_.type; url = $_.url; categoryHints = $_.categoryHints } })
+        items = $items
+        errors = $errors
+    }
+    $json = $payload | ConvertTo-Json -Depth 12
+    [System.IO.File]::WriteAllText($cacheFile, $json, (New-Object Text.UTF8Encoding($false)))
+    return Apply-AiNewsChinese $json
+}
+
+function Get-AiNewsFavoritesJson {
+    Ensure-DataStore
+    $favFile = Join-Path $dataDir "ai-news-favorites.json"
+    if (-not (Test-Path $favFile)) { return '{"ok":true,"items":[]}' }
+    return [System.IO.File]::ReadAllText($favFile, [Text.Encoding]::UTF8)
+}
+
+function Save-AiNewsFavorites {
+    param($Items)
+    Ensure-DataStore
+    $favFile = Join-Path $dataDir "ai-news-favorites.json"
+    $payload = [pscustomobject]@{ ok = $true; updatedAt = (Get-Date).ToUniversalTime().ToString("o"); items = @($Items) }
+    [System.IO.File]::WriteAllText($favFile, ($payload | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding($false)))
+}
+
+function Get-AiNewsZhStore {
+    Ensure-DataStore
+    $zhFile = Join-Path $dataDir "ai-news-zh.json"
+    if (Test-Path $zhFile) {
+        try { return ([System.IO.File]::ReadAllText($zhFile, [Text.Encoding]::UTF8) | ConvertFrom-Json) } catch {}
+    }
+    return [pscustomobject]@{ items = @{}; updatedAt = "" }
+}
+
+function Save-AiNewsZhStore {
+    param($Store)
+    Ensure-DataStore
+    if (-not $Store) { $Store = [pscustomobject]@{ items = @{} } }
+    if (-not ($Store.PSObject.Properties.Name -contains "items") -or -not $Store.items) { $Store | Add-Member -NotePropertyName items -NotePropertyValue @{} -Force }
+    $Store | Add-Member -NotePropertyName updatedAt -NotePropertyValue ((Get-Date).ToUniversalTime().ToString("o")) -Force
+    $zhFile = Join-Path $dataDir "ai-news-zh.json"
+    [System.IO.File]::WriteAllText($zhFile, ($Store | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding($false)))
+}
+
+function Get-AiNewsTranslationConfig {
+    try {
+        $state = Get-StateJson | ConvertFrom-Json
+        $s = $state.settings
+        if (-not $s) { return $null }
+        $url = [string]$s.llm_tx_url; $key = [string]$s.llm_tx_key; $model = [string]$s.llm_tx_model
+        if ([string]::IsNullOrWhiteSpace($url) -or [string]::IsNullOrWhiteSpace($key) -or [string]::IsNullOrWhiteSpace($model)) {
+            $url = [string]$s.llm_url; $key = [string]$s.llm_key; $model = [string]$s.llm_model
+        }
+        if ([string]::IsNullOrWhiteSpace($url) -or [string]::IsNullOrWhiteSpace($key) -or [string]::IsNullOrWhiteSpace($model)) { return $null }
+        return @{ url = $url.TrimEnd('/'); key = $key; model = $model }
+    } catch {
+        return $null
+    }
+}
+
+function ConvertFrom-AiNewsLlmJson {
+    param([string]$Text)
+    $t = [string]$Text
+    $t = [regex]::Replace($t, '```[a-zA-Z]*\s*', '')
+    $t = $t.Replace('```', '')
+    $s = $t.IndexOf('[')
+    $e = $t.LastIndexOf(']')
+    if ($s -ge 0 -and $e -gt $s) { $t = $t.Substring($s, $e - $s + 1) }
+    return @($t | ConvertFrom-Json)
+}
+
+function Invoke-AiNewsTranslateBatch {
+    param($Items, $Config)
+    if (-not $Items -or @($Items).Count -eq 0 -or -not $Config) { return @() }
+    $payload = @($Items | ForEach-Object {
+        [pscustomobject]@{
+            id = [string]$_.id
+            title = [string]$_.title
+            summary = [string]$_.summary
+            detail = [string]$_.detail
+            keyPoints = @($_.keyPoints)
+            sourceName = [string]$_.sourceName
+            category = [string]$_.category
+        }
+    })
+    $sys = "你是AI资讯中文编辑和翻译助手。请把英文AI新闻数据翻译成简体中文，要求标题像中文科技早报标题，摘要和详情通顺准确，保留 OpenAI、Claude、GitHub、API、Token、MCP 等专有名词。只返回严格JSON数组，每项格式为 {""id"":""原样保留"",""title_zh"":""中文标题"",""summary_zh"":""中文摘要"",""detail_zh"":""中文详情"",""keyPoints_zh"":[""中文要点1"",""中文要点2""]}。不要解释，不要代码块。"
+    $messages = @(
+        @{ role = "system"; content = $sys },
+        @{ role = "user"; content = ($payload | ConvertTo-Json -Depth 8 -Compress) }
+    )
+    $body = @{
+        model = [string]$Config.model
+        messages = $messages
+        max_tokens = 8000
+        temperature = 0.3
+    } | ConvertTo-Json -Depth 10 -Compress
+    $utf8NoBom = New-Object Text.UTF8Encoding($false)
+    $resp = Invoke-WebRequest -Uri (($Config.url) + "/chat/completions") -Method POST -UseBasicParsing -TimeoutSec 180 -Headers @{ "Authorization" = "Bearer " + [string]$Config.key } -ContentType "application/json; charset=utf-8" -Body ($utf8NoBom.GetBytes($body))
+    $data = Get-WebResponseUtf8Content $resp | ConvertFrom-Json
+    $txt = [string]$data.choices[0].message.content
+    if ([string]::IsNullOrWhiteSpace($txt)) { return @() }
+    return @(ConvertFrom-AiNewsLlmJson $txt)
+}
+
+function Get-AiNewsZhItem {
+    param($Store, [string]$Id)
+    if (-not $Store -or -not $Store.items -or [string]::IsNullOrWhiteSpace($Id)) { return $null }
+    if ($Store.items -is [hashtable]) { return $Store.items[$Id] }
+    $prop = $Store.items.PSObject.Properties[$Id]
+    if ($prop) { return $prop.Value }
+    return $null
+}
+
+function Set-AiNewsZhItem {
+    param($Store, [string]$Id, $Value)
+    if (-not $Store -or [string]::IsNullOrWhiteSpace($Id)) { return }
+    if (-not $Store.items) { $Store | Add-Member -NotePropertyName items -NotePropertyValue @{} -Force }
+    if ($Store.items -is [hashtable]) { $Store.items[$Id] = $Value; return }
+    $Store.items | Add-Member -NotePropertyName $Id -NotePropertyValue $Value -Force
+}
+
+function Apply-AiNewsChinese {
+    param([string]$Json)
+    try {
+        $payload = $Json | ConvertFrom-Json
+        if (-not $payload -or -not $payload.items) { return $Json }
+        $store = Get-AiNewsZhStore
+        if (-not $store.items) { $store | Add-Member -NotePropertyName items -NotePropertyValue @{} -Force }
+        $items = @($payload.items)
+        foreach ($it in $items) {
+            $z = Get-AiNewsZhItem $store ([string]$it.id)
+            if ($z) {
+                if ($z.title_zh) { $it | Add-Member -NotePropertyName title_zh -NotePropertyValue ([string]$z.title_zh) -Force }
+                if ($z.summary_zh) { $it | Add-Member -NotePropertyName summary_zh -NotePropertyValue ([string]$z.summary_zh) -Force }
+                if ($z.detail_zh) { $it | Add-Member -NotePropertyName detail_zh -NotePropertyValue ([string]$z.detail_zh) -Force }
+                if ($z.keyPoints_zh) { $it | Add-Member -NotePropertyName keyPoints_zh -NotePropertyValue @($z.keyPoints_zh) -Force }
+            }
+        }
+        $missing = @($items | Where-Object {
+            $title = [string]$_.title
+            $id = [string]$_.id
+            ($title -notmatch '[\u4e00-\u9fff]') -and -not (Get-AiNewsZhItem $store $id)
+        } | Select-Object -First 80)
+        $cfg = Get-AiNewsTranslationConfig
+        if ($cfg -and $missing.Count -gt 0) {
+            for ($i = 0; $i -lt $missing.Count; $i += 8) {
+                $batch = @($missing | Select-Object -Skip $i -First 8)
+                try {
+                    $translated = Invoke-AiNewsTranslateBatch $batch $cfg
+                    foreach ($tr in $translated) {
+                        if (-not $tr.id) { continue }
+                        $obj = [pscustomobject]@{
+                            title_zh = [string]$tr.title_zh
+                            summary_zh = [string]$tr.summary_zh
+                            detail_zh = [string]$tr.detail_zh
+                            keyPoints_zh = @($tr.keyPoints_zh | ForEach-Object { [string]$_ })
+                        }
+                        Set-AiNewsZhItem $store ([string]$tr.id) $obj
+                    }
+                    Save-AiNewsZhStore $store
+                } catch {
+                    Write-ServerLog "ai-news translate batch failed: $($_.Exception.Message)"
+                    break
+                }
+            }
+            foreach ($it in $items) {
+                $z = Get-AiNewsZhItem $store ([string]$it.id)
+                if ($z) {
+                    if ($z.title_zh) { $it | Add-Member -NotePropertyName title_zh -NotePropertyValue ([string]$z.title_zh) -Force }
+                    if ($z.summary_zh) { $it | Add-Member -NotePropertyName summary_zh -NotePropertyValue ([string]$z.summary_zh) -Force }
+                    if ($z.detail_zh) { $it | Add-Member -NotePropertyName detail_zh -NotePropertyValue ([string]$z.detail_zh) -Force }
+                    if ($z.keyPoints_zh) { $it | Add-Member -NotePropertyName keyPoints_zh -NotePropertyValue @($z.keyPoints_zh) -Force }
+                }
+            }
+        }
+        return ($payload | ConvertTo-Json -Depth 20)
+    } catch {
+        Write-ServerLog "ai-news chinese apply failed: $($_.Exception.Message)"
+        return $Json
+    }
+}
+
 function Ensure-DataStore {
     if (-not [System.IO.Directory]::Exists($dataDir)) {
         [void][System.IO.Directory]::CreateDirectory($dataDir)
@@ -1681,6 +2031,90 @@ while ($true) {
                 Write-ServerLog "url-extract exception: $($_.Exception.Message)"
                 $message = @{ ok = $false; error = $_.Exception.Message; text = "" } | ConvertTo-Json -Compress
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/ai-news-favorites") {
+            try {
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes((Get-AiNewsFavoritesJson)))
+            } catch {
+                Write-ServerLog "ai-news-favorites exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message; items = @() } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/ai-news-zh*") {
+            try {
+                $zhFile = Join-Path $dataDir "ai-news-zh.json"
+                if ($method -eq "POST") {
+                    $ok = $false
+                    try { $null = $bodyText | ConvertFrom-Json; $ok = $true } catch {}
+                    if (-not $ok) { throw "无效的 JSON" }
+                    [System.IO.File]::WriteAllText($zhFile, [string]$bodyText, (New-Object Text.UTF8Encoding($false)))
+                    Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"ok":true}'))
+                } else {
+                    if (Test-Path $zhFile) {
+                        Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([System.IO.File]::ReadAllBytes($zhFile))
+                    } else {
+                        Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"items":{}}'))
+                    }
+                }
+            } catch {
+                Write-ServerLog "ai-news-zh exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/ai-news-favorite" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $item = $payload.item
+                if (-not $item -or [string]::IsNullOrWhiteSpace([string]$item.id)) { throw "缺少收藏内容" }
+                $fav = Get-AiNewsFavoritesJson | ConvertFrom-Json
+                $items = @($fav.items | Where-Object { [string]$_.id -ne [string]$item.id })
+                try { $item | Add-Member -NotePropertyName favoritedAt -NotePropertyValue ((Get-Date).ToUniversalTime().ToString("o")) -Force } catch {}
+                $items = @($item) + $items
+                Save-AiNewsFavorites $items
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"ok":true}'))
+            } catch {
+                Write-ServerLog "ai-news-favorite exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -eq "/ai-news-favorite-delete" -and $method -eq "POST") {
+            try {
+                $payload = $bodyText | ConvertFrom-Json
+                $id = [string]$payload.id
+                if ([string]::IsNullOrWhiteSpace($id)) { throw "缺少收藏ID" }
+                $fav = Get-AiNewsFavoritesJson | ConvertFrom-Json
+                $items = @($fav.items | Where-Object { [string]$_.id -ne $id })
+                Save-AiNewsFavorites $items
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes('{"ok":true}'))
+            } catch {
+                Write-ServerLog "ai-news-favorite-delete exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 500 "Internal Server Error" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
+            }
+            continue
+        }
+
+        if ($requestPath -like "/ai-news*") {
+            try {
+                $forceRefresh = (Get-QueryValue $requestPath "refresh") -eq "1"
+                $json = Get-AiNewsPayload $forceRefresh
+                Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($json))
+            } catch {
+                Write-ServerLog "ai-news exception: $($_.Exception.Message)"
+                $message = @{ ok = $false; error = $_.Exception.Message; items = @() } | ConvertTo-Json -Compress
+                Send-HttpResponse $client 502 "Bad Gateway" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($message))
             }
             continue
         }
