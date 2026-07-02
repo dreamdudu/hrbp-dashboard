@@ -28,7 +28,7 @@ $createdNew = $false
 $mutex = New-Object System.Threading.Mutex($false, $mutexName, [ref]$createdNew)
 $acquired = $false
 try { $acquired = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $acquired = $true }
-if (-not $acquired) {
+if (-not $acquired -and $env:DWS_LIBONLY -ne '1') {
     # Another instance holds the lock (the actually running server): exit immediately, do not grab another port
     try {
         Invoke-LogRotation $logPath
@@ -248,6 +248,42 @@ function Get-AiNewsPayload {
     return Apply-AiNewsChinese $json
 }
 
+function Start-AiNewsRefreshAsync {
+    # 在独立后台进程刷新 AI 资讯缓存，绝不阻塞单线程服务主循环；锁文件防并发（5 分钟内不重复触发）
+    $lock = Join-Path $dataDir "ai-news-refresh.lock"
+    try {
+        if (Test-Path $lock) {
+            $age = (New-TimeSpan -Start (Get-Item $lock).LastWriteTime -End (Get-Date)).TotalMinutes
+            if ($age -lt 5) { return }
+        }
+        [System.IO.File]::WriteAllText($lock, (Get-Date).ToString("o"))
+        $refresh = Join-Path $scriptDir "ai_news_refresh.ps1"
+        if ([System.IO.File]::Exists($refresh)) {
+            Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-File", $refresh) -WindowStyle Hidden | Out-Null
+        }
+    } catch { Write-ServerLog "ai-news async refresh spawn failed: $($_.Exception.Message)" }
+}
+function Serve-AiNews {
+    param([bool]$ForceRefresh = $false)
+    Ensure-DataStore
+    $cacheFile = Join-Path $dataDir "ai-news-cache.json"
+    $ttlMin = 120
+    $fresh = $false
+    if (Test-Path $cacheFile) {
+        $ageMin = (New-TimeSpan -Start (Get-Item $cacheFile).LastWriteTime -End (Get-Date)).TotalMinutes
+        if ($ageMin -lt $ttlMin -and -not $ForceRefresh) { $fresh = $true }
+    }
+    if (-not $fresh) { Start-AiNewsRefreshAsync }
+    if (Test-Path $cacheFile) {
+        $served = Apply-AiNewsChinese ([System.IO.File]::ReadAllText($cacheFile, [Text.Encoding]::UTF8)) $true
+        if (-not $fresh) {
+            try { $o = $served | ConvertFrom-Json; $o | Add-Member -NotePropertyName refreshing -NotePropertyValue $true -Force; $served = $o | ConvertTo-Json -Depth 20 } catch {}
+        }
+        return $served
+    }
+    $cats = @("要闻", "产品应用", "模型发布", "开发生态", "行业动态", "技术与洞察", "前瞻与传闻", "其他")
+    return ([pscustomobject]@{ ok = $true; refreshing = $true; stale = $true; date = (Get-Date).ToString("yyyy-MM-dd"); fetchedAt = $null; categories = $cats; sources = @(); items = @(); errors = @() } | ConvertTo-Json -Depth 12)
+}
 function Get-AiNewsFavoritesJson {
     Ensure-DataStore
     $favFile = Join-Path $dataDir "ai-news-favorites.json"
@@ -360,7 +396,7 @@ function Set-AiNewsZhItem {
 }
 
 function Apply-AiNewsChinese {
-    param([string]$Json)
+    param([string]$Json, [bool]$NoTranslate = $false)
     try {
         $payload = $Json | ConvertFrom-Json
         if (-not $payload -or -not $payload.items) { return $Json }
@@ -381,7 +417,7 @@ function Apply-AiNewsChinese {
             $id = [string]$_.id
             ($title -notmatch '[\u4e00-\u9fff]') -and -not (Get-AiNewsZhItem $store $id)
         } | Select-Object -First 80)
-        $cfg = Get-AiNewsTranslationConfig
+        $cfg = if ($NoTranslate) { $null } else { Get-AiNewsTranslationConfig }
         if ($cfg -and $missing.Count -gt 0) {
             for ($i = 0; $i -lt $missing.Count; $i += 8) {
                 $batch = @($missing | Select-Object -Skip $i -First 8)
@@ -1378,6 +1414,8 @@ function Invoke-OutlookEmailSync {
     return @{ success = $true; emails = @($emails); count = $count; scanned = $scanned }
 }
 
+# 仅加载函数/变量、不启动监听（供 ai_news_refresh.ps1 等后台脚本 dot-source 复用逻辑）
+if ($env:DWS_LIBONLY -eq '1') { return }
 $server = New-BoardListener
 $listener = $server.Listener
 $port = $server.Port
@@ -2114,7 +2152,7 @@ while ($true) {
         if ($requestPath -like "/ai-news*") {
             try {
                 $forceRefresh = (Get-QueryValue $requestPath "refresh") -eq "1"
-                $json = Get-AiNewsPayload $forceRefresh
+                $json = Serve-AiNews $forceRefresh
                 Send-HttpResponse $client 200 "OK" "application/json; charset=utf-8" ([Text.Encoding]::UTF8.GetBytes($json))
             } catch {
                 Write-ServerLog "ai-news exception: $($_.Exception.Message)"
