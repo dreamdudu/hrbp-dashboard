@@ -144,7 +144,7 @@ function Test-AiNewsRelevant {
 function Get-AiNewsItemsFromSource {
     param($Source)
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-    $resp = Invoke-WebRequest -Uri ([string]$Source.feedUrl) -UseBasicParsing -TimeoutSec 25 -Headers @{ "User-Agent" = "HRBP-Dashboard"; "Accept" = "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" }
+    $resp = Invoke-WebRequest -Uri ([string]$Source.feedUrl) -UseBasicParsing -TimeoutSec 6 -Headers @{ "User-Agent" = "HRBP-Dashboard"; "Accept" = "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" }
     $content = Get-WebResponseUtf8Content $resp
     [xml]$xml = $content
     $nodes = $xml.SelectNodes("//*[local-name()='item' or local-name()='entry']")
@@ -202,7 +202,12 @@ function Get-AiNewsPayload {
     $sources = Get-AiNewsSources
     $all = @()
     $errors = @()
+    $budget = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($src in $sources) {
+        if ($budget.Elapsed.TotalSeconds -gt 20) {
+            Write-ServerLog "ai-news fetch budget (20s) exceeded, stopping early with partial results"
+            break
+        }
         try {
             $all += @(Get-AiNewsItemsFromSource $src)
         } catch {
