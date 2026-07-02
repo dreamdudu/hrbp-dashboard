@@ -81,7 +81,8 @@ function Get-AiNewsSources {
         # 国内源（region=cn，中文原文，自动跳过翻译；media 类型会经关键词过滤只留 AI 相关）
         @{ id = "ithome"; name = "IT之家"; type = "media"; region = "cn"; url = "https://www.ithome.com/"; feedUrl = "https://www.ithome.com/rss/"; categoryHints = @("要闻", "产品应用", "行业动态"); confidence = "confirmed" },
         @{ id = "infoq-cn"; name = "InfoQ 中国"; type = "media"; region = "cn"; feedTz = 8; url = "https://www.infoq.cn/"; feedUrl = "https://www.infoq.cn/feed"; categoryHints = @("开发生态", "技术与洞察", "模型发布"); confidence = "confirmed" },
-        @{ id = "solidot"; name = "Solidot 奇客资讯"; type = "media"; region = "cn"; url = "https://www.solidot.org/"; feedUrl = "https://www.solidot.org/index.rss"; categoryHints = @("技术与洞察", "行业动态"); confidence = "confirmed" }
+        @{ id = "solidot"; name = "Solidot 奇客资讯"; type = "media"; region = "cn"; url = "https://www.solidot.org/"; feedUrl = "https://www.solidot.org/index.rss"; categoryHints = @("技术与洞察", "行业动态"); confidence = "confirmed" },
+        @{ id = "aitnt"; name = "AITNT 资讯"; type = "media"; region = "cn"; scraper = "aitnt"; feedTz = 8; url = "https://www.aitntnews.com/"; feedUrl = "https://www.aitntnews.com/"; categoryHints = @("要闻", "产品应用", "模型发布", "行业动态"); confidence = "confirmed" }
     )
 }
 
@@ -145,8 +146,70 @@ function Test-AiNewsRelevant {
     return ($hay -match 'ai|artificial intelligence|openai|anthropic|claude|gpt|llm|large language|gemini|deepmind|hugging face|agent|agents|copilot|mcp|rag|model|模型|人工智能|大模型|生成式|智能体|机器人|深度学习|机器学习')
 }
 
+function Get-AitntNewsItems {
+    # aitntnews.com 无 RSS、列表为前端渲染；从首页取最新 newId，逐篇解析详情页的 JSON-LD（headline/description/datePublished）。
+    param($Source)
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    $homeResp = Invoke-WebRequest -Uri ([string]$Source.url) -UseBasicParsing -TimeoutSec 8 -Headers @{ "User-Agent" = $ua }
+    $homeHtml = Get-WebResponseUtf8Content $homeResp
+    $ids = @([regex]::Matches($homeHtml, 'newId=(\d+)') | ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Unique -Descending | Select-Object -First 12)
+    $items = @()
+    $budget = [System.Diagnostics.Stopwatch]::StartNew()
+    foreach ($id in $ids) {
+        if ($budget.Elapsed.TotalSeconds -gt 20) { break }
+        try {
+            $link = "https://www.aitntnews.com/newDetail.html?newId=" + $id
+            $d = Invoke-WebRequest -Uri $link -UseBasicParsing -TimeoutSec 5 -Headers @{ "User-Agent" = $ua }
+            $dh = Get-WebResponseUtf8Content $d
+            $m = [regex]::Match($dh, '(?s)<script type="application/ld\+json">(.*?)</script>')
+            if (-not $m.Success) { continue }
+            $j = $null
+            try { $j = $m.Groups[1].Value.Trim() | ConvertFrom-Json } catch { continue }
+            $title = ([string]$j.headline).Trim()
+            if ([string]::IsNullOrWhiteSpace($title)) { continue }
+            $summary = ConvertFrom-AiNewsHtml ([string]$j.description) 260
+            if (-not (Test-AiNewsRelevant $title $summary $Source)) { continue }
+            # datePublished 形如 "2026-07-02 12:03"，为北京墙钟时间，按 +08:00 换算成 UTC
+            $dt = (Get-Date).ToUniversalTime()
+            $pub = [string]$j.datePublished
+            if ($pub) {
+                try {
+                    $naive = [DateTime]::Parse($pub, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None)
+                    $dt = ([DateTimeOffset]::new($naive, [TimeSpan]::FromHours(8))).UtcDateTime
+                } catch {}
+            }
+            $category = ConvertTo-AiNewsCategory $title $summary $Source
+            $confidence = [string]$Source.confidence
+            if ($category -eq "前瞻与传闻") { $confidence = "rumor" }
+            $nid = ConvertTo-AiNewsId (([string]$Source.id) + "|" + $link + "|" + $title)
+            $detail = if ($summary) { $summary } else { $title }
+            $keyPoints = @(@($summary, ("来源：" + [string]$Source.name), ("分类：" + $category)) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 4)
+            $items += [pscustomobject]@{
+                id = $nid
+                title = $title
+                category = $category
+                summary = $summary
+                keyPoints = $keyPoints
+                detail = $detail
+                sourceName = [string]$Source.name
+                sourceUrl = $link
+                sourceType = [string]$Source.type
+                region = "cn"
+                publishedAt = $dt.ToUniversalTime().ToString("o")
+                fetchedAt = (Get-Date).ToUniversalTime().ToString("o")
+                tags = @()
+                confidence = $confidence
+                isFavorite = $false
+            }
+        } catch { continue }
+    }
+    return @($items)
+}
+
 function Get-AiNewsItemsFromSource {
     param($Source)
+    if ([string]$Source.scraper -eq "aitnt") { return Get-AitntNewsItems $Source }
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
     $resp = Invoke-WebRequest -Uri ([string]$Source.feedUrl) -UseBasicParsing -TimeoutSec 6 -Headers @{ "User-Agent" = "HRBP-Dashboard"; "Accept" = "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" }
     $content = Get-WebResponseUtf8Content $resp
@@ -224,8 +287,8 @@ function Get-AiNewsPayload {
     $errors = @()
     $budget = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($src in $sources) {
-        if ($budget.Elapsed.TotalSeconds -gt 35) {
-            Write-ServerLog "ai-news fetch budget (35s) exceeded, stopping early with partial results"
+        if ($budget.Elapsed.TotalSeconds -gt 60) {
+            Write-ServerLog "ai-news fetch budget (60s) exceeded, stopping early with partial results"
             break
         }
         try {
