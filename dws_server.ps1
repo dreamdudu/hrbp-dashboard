@@ -204,8 +204,8 @@ function Get-AiNewsPayload {
     $errors = @()
     $budget = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($src in $sources) {
-        if ($budget.Elapsed.TotalSeconds -gt 20) {
-            Write-ServerLog "ai-news fetch budget (20s) exceeded, stopping early with partial results"
+        if ($budget.Elapsed.TotalSeconds -gt 35) {
+            Write-ServerLog "ai-news fetch budget (35s) exceeded, stopping early with partial results"
             break
         }
         try {
