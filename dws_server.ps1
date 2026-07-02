@@ -77,7 +77,11 @@ function Get-AiNewsSources {
         @{ id = "the-decoder"; name = "The Decoder"; type = "media"; url = "https://the-decoder.com/"; feedUrl = "https://the-decoder.com/feed/"; categoryHints = @("行业动态", "模型发布", "产品应用"); confidence = "confirmed" },
         @{ id = "mittr-ai"; name = "MIT Technology Review AI"; type = "media"; url = "https://www.technologyreview.com/topic/artificial-intelligence/"; feedUrl = "https://www.technologyreview.com/topic/artificial-intelligence/feed/"; categoryHints = @("技术与洞察", "行业动态"); confidence = "analysis" },
         @{ id = "marktechpost-ai"; name = "MarkTechPost AI"; type = "media"; url = "https://www.marktechpost.com/category/technology/artificial-intelligence/"; feedUrl = "https://www.marktechpost.com/category/technology/artificial-intelligence/feed/"; categoryHints = @("技术与洞察", "模型发布"); confidence = "analysis" },
-        @{ id = "hackernews-ai"; name = "Hacker News AI"; type = "community"; url = "https://hnrss.org/newest?q=AI"; feedUrl = "https://hnrss.org/newest?q=AI"; categoryHints = @("前瞻与传闻"); confidence = "rumor" }
+        @{ id = "hackernews-ai"; name = "Hacker News AI"; type = "community"; region = "intl"; url = "https://hnrss.org/newest?q=AI"; feedUrl = "https://hnrss.org/newest?q=AI"; categoryHints = @("前瞻与传闻"); confidence = "rumor" },
+        # 国内源（region=cn，中文原文，自动跳过翻译；media 类型会经关键词过滤只留 AI 相关）
+        @{ id = "ithome"; name = "IT之家"; type = "media"; region = "cn"; url = "https://www.ithome.com/"; feedUrl = "https://www.ithome.com/rss/"; categoryHints = @("要闻", "产品应用", "行业动态"); confidence = "confirmed" },
+        @{ id = "infoq-cn"; name = "InfoQ 中国"; type = "media"; region = "cn"; url = "https://www.infoq.cn/"; feedUrl = "https://www.infoq.cn/feed"; categoryHints = @("开发生态", "技术与洞察", "模型发布"); confidence = "confirmed" },
+        @{ id = "solidot"; name = "Solidot 奇客资讯"; type = "media"; region = "cn"; url = "https://www.solidot.org/"; feedUrl = "https://www.solidot.org/index.rss"; categoryHints = @("技术与洞察", "行业动态"); confidence = "confirmed" }
     )
 }
 
@@ -178,6 +182,7 @@ function Get-AiNewsItemsFromSource {
             sourceName = [string]$Source.name
             sourceUrl = $link
             sourceType = [string]$Source.type
+            region = $(if ([string]$Source.region) { [string]$Source.region } else { "intl" })
             publishedAt = $dt.ToUniversalTime().ToString("o")
             fetchedAt = (Get-Date).ToUniversalTime().ToString("o")
             tags = @()
@@ -225,7 +230,11 @@ function Get-AiNewsPayload {
         $newRank = if ($it.sourceType -eq "official") { 3 } elseif ($it.sourceType -eq "media") { 2 } else { 1 }
         if ($newRank -gt $oldRank -or ([string]$it.summary).Length -gt ([string]$old.summary).Length) { $dedup[$key] = $it }
     }
-    $items = @($dedup.Values | Sort-Object { try { [DateTime]::Parse($_.publishedAt) } catch { [DateTime]::MinValue } } -Descending | Select-Object -First 80)
+    # 按发布时间倒序后，国际/国内各取 top70（错峰发布时避免一侧被挤空）
+    $sorted = @($dedup.Values | Sort-Object { try { [DateTime]::Parse($_.publishedAt) } catch { [DateTime]::MinValue } } -Descending)
+    $intlItems = @($sorted | Where-Object { [string]$_.region -ne "cn" } | Select-Object -First 70)
+    $cnItems = @($sorted | Where-Object { [string]$_.region -eq "cn" } | Select-Object -First 70)
+    $items = @($intlItems + $cnItems)
     if ($items.Count -eq 0 -and (Test-Path $cacheFile)) {
         $cached = [System.IO.File]::ReadAllText($cacheFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
         $cached.stale = $true
@@ -239,7 +248,7 @@ function Get-AiNewsPayload {
         fetchedAt = (Get-Date).ToUniversalTime().ToString("o")
         stale = $false
         categories = $cats
-        sources = @($sources | ForEach-Object { [pscustomobject]@{ id = $_.id; name = $_.name; type = $_.type; url = $_.url; categoryHints = $_.categoryHints } })
+        sources = @($sources | ForEach-Object { [pscustomobject]@{ id = $_.id; name = $_.name; type = $_.type; region = $(if ([string]$_.region) { [string]$_.region } else { "intl" }); url = $_.url; categoryHints = $_.categoryHints } })
         items = $items
         errors = $errors
     }
