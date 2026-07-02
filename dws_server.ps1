@@ -80,7 +80,7 @@ function Get-AiNewsSources {
         @{ id = "hackernews-ai"; name = "Hacker News AI"; type = "community"; region = "intl"; url = "https://hnrss.org/newest?q=AI"; feedUrl = "https://hnrss.org/newest?q=AI"; categoryHints = @("前瞻与传闻"); confidence = "rumor" },
         # 国内源（region=cn，中文原文，自动跳过翻译；media 类型会经关键词过滤只留 AI 相关）
         @{ id = "ithome"; name = "IT之家"; type = "media"; region = "cn"; url = "https://www.ithome.com/"; feedUrl = "https://www.ithome.com/rss/"; categoryHints = @("要闻", "产品应用", "行业动态"); confidence = "confirmed" },
-        @{ id = "infoq-cn"; name = "InfoQ 中国"; type = "media"; region = "cn"; url = "https://www.infoq.cn/"; feedUrl = "https://www.infoq.cn/feed"; categoryHints = @("开发生态", "技术与洞察", "模型发布"); confidence = "confirmed" },
+        @{ id = "infoq-cn"; name = "InfoQ 中国"; type = "media"; region = "cn"; feedTz = 8; url = "https://www.infoq.cn/"; feedUrl = "https://www.infoq.cn/feed"; categoryHints = @("开发生态", "技术与洞察", "模型发布"); confidence = "confirmed" },
         @{ id = "solidot"; name = "Solidot 奇客资讯"; type = "media"; region = "cn"; url = "https://www.solidot.org/"; feedUrl = "https://www.solidot.org/index.rss"; categoryHints = @("技术与洞察", "行业动态"); confidence = "confirmed" }
     )
 }
@@ -161,8 +161,23 @@ function Get-AiNewsItemsFromSource {
         $summary = ConvertFrom-AiNewsHtml $rawSummary 260
         if (-not (Test-AiNewsRelevant $title $summary $Source)) { continue }
         $pub = Get-AiNewsChildText $node @("published", "updated", "pubDate", "dc:date")
-        $dt = Get-Date
-        if ($pub) { try { $dt = [DateTime]::Parse($pub, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal) } catch { $dt = Get-Date } }
+        $dt = (Get-Date).ToUniversalTime()
+        if ($pub) {
+            $tzOverride = $Source.feedTz
+            if ($null -ne $tzOverride) {
+                # 该源的发布时间其实是 UTC+tzOverride 的本地墙钟时间（部分中文源会把北京时间错误标注为 GMT）。
+                # 先剥掉尾部的时区标记，按无时区解析，再套上指定偏移换算成真正的 UTC。
+                try {
+                    $clean = ([regex]::Replace([string]$pub, '\s*(GMT|UTC|Z|[+\-]\d{2}:?\d{2})\s*$', '')).Trim()
+                    $naive = [DateTime]::Parse($clean, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None)
+                    $dt = ([DateTimeOffset]::new($naive, [TimeSpan]::FromHours([double]$tzOverride))).UtcDateTime
+                } catch {
+                    try { $dt = ([DateTime]::Parse($pub, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal)).ToUniversalTime() } catch { $dt = (Get-Date).ToUniversalTime() }
+                }
+            } else {
+                try { $dt = ([DateTime]::Parse($pub, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal)).ToUniversalTime() } catch { $dt = (Get-Date).ToUniversalTime() }
+            }
+        }
         $category = ConvertTo-AiNewsCategory $title $summary $Source
         $confidence = [string]$Source.confidence
         if ($category -eq "前瞻与传闻") { $confidence = "rumor" }
